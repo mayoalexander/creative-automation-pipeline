@@ -19,7 +19,7 @@ ENGINE = "vanilla"
 
 
 def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
-        markets: list[str] | None = None, plan_only: bool = False) -> dict:
+        markets: list[str] | None = None, plan_only: bool = False, engine: str = ENGINE) -> dict:
     t0 = time.time()
     cfg = load_config(config_dir)
     if campaign_id not in cfg.campaigns:
@@ -29,7 +29,7 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
     kind = provider or genai.get("image_provider", "mock")
     image_provider, translator = build_providers(kind, genai)
 
-    out = Path(out_root) / ENGINE / campaign_id
+    out = Path(out_root) / engine / campaign_id
     out.mkdir(parents=True, exist_ok=True)
     fh = logging.FileHandler(out / "run.log", mode="w")
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
@@ -40,9 +40,10 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
     sources = {} if plan_only else source_phase(cfg.root, campaign, plans, image_provider)
     items = render_phase(cfg, campaign, plans, sources, out) if not plan_only else []
     write_market_files(plans, out)
-    report = build_report(ENGINE, cfg, campaign, plans, sources, items, time.time() - t0, image_provider.name)
+    report = build_report(engine, cfg, campaign, plans, sources, items, time.time() - t0, image_provider.name)
     write_outputs(out, report, items)
     logging.getLogger().removeHandler(fh)
+    report["_items"] = items  # in-memory only, for engines that build on this one
     return report
 
 
