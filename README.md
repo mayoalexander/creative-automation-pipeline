@@ -1,5 +1,7 @@
 # Creative Automation Pipeline
 
+![tests](https://github.com/mayoalexander/creative-automation-pipeline/actions/workflows/tests.yml/badge.svg)
+
 A proof of concept that turns **one campaign brief** into **localized, on-brand social ad creatives** for every market, product and aspect ratio, using GenAI only where an asset is missing.
 
 The same workflow is built **three ways**, against **one shared contract** (same config in, same files out, checked by the same tests):
