@@ -5,8 +5,9 @@
   3. RENDER   per (market, product, channel, format, asset type): build or plan
   4. REPORT   plan.json, report.json, approvals, influencers
 
-Only `static` has a generator today. Every other asset type a channel declares
-is written to the plan as `planned`, so the client sees the full scope.
+Asset types are a registry (GENERATORS). Only `static` has a generator today;
+every other type a channel declares is written to the plan as `planned`, so the
+client sees the full scope. Adding video = one function + one registry entry.
 """
 from __future__ import annotations
 
@@ -15,8 +16,10 @@ import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, Iterator
 
 from PIL import Image
 
@@ -25,8 +28,6 @@ from .config import Config, MarketContext, resolve_market
 from .render import render_static
 
 log = logging.getLogger("pipeline")
-
-GENERATORS = {"static"}  # asset types this engine can render today
 
 
 @dataclass
@@ -127,38 +128,74 @@ def source_phase(root: Path, campaign: dict, plans: list[MarketPlan], provider, 
 
 
 # ---------------------------------------------------------------- phase 3
+@dataclass(frozen=True)
+class Deliverable:
+    """One file the campaign needs: market × product × channel × format × asset type."""
+    market: str
+    product: str
+    channel: str
+    format: dict
+    asset_type: str
+    safe_zone: float = 0.06
+
+    @property
+    def path(self) -> Path:
+        return Path(self.market) / self.product / self.channel / self.asset_type / f"{self.format['id']}.png"
+
+    def record(self, **extra) -> dict:
+        return {"market": self.market, "product": self.product, "channel": self.channel,
+                "format": self.format["id"], "asset_type": self.asset_type, "path": str(self.path), **extra}
+
+
+def deliverables(cfg: Config, campaign: dict, market: str, product: dict) -> Iterator[Deliverable]:
+    """Everything one product needs in one market, driven by the channel registry."""
+    for ch_id in campaign.get("channels", ["social"]):
+        channel = cfg.channels[ch_id]
+        for fmt in channel["formats"]:
+            for asset_type in channel["asset_types"]:
+                yield Deliverable(market, product["id"], ch_id, fmt, asset_type,
+                                  channel.get("text", {}).get("safe_zone", 0.06))
+
+
+def generate_static(d: Deliverable, image: Image.Image, plan: MarketPlan, root: Path):
+    return render_static(image, d.format, plan.ctx.brand, plan.ctx.partner, plan.message, plan.cta,
+                         plan.ctx.disclaimers(), root, d.safe_zone)
+
+
+# asset type -> generator. Anything a channel asks for that isn't here is "planned".
+GENERATORS: dict[str, Callable] = {"static": generate_static}
+
+
+@lru_cache(maxsize=32)
+def _open(path: str) -> Image.Image:
+    """Decode each source once, however many formats are cut from it (renderers never mutate it)."""
+    return Image.open(path).convert("RGB")
+
+
+def produce(d: Deliverable, plan: MarketPlan, source: dict, root: Path, out: Path) -> dict:
+    """Build one deliverable, or say why not. Used by every engine."""
+    if plan.blocked:
+        return d.record(status="blocked_legal")
+    if d.asset_type not in GENERATORS:
+        return d.record(status="planned")
+    if not source.get("path"):
+        return d.record(status="error", error=source.get("error", "no source image"))
+
+    image = _open(str(source["path"]))
+    creative, layout, logo = GENERATORS[d.asset_type](d, image, plan, root)
+    (out / d.path).parent.mkdir(parents=True, exist_ok=True)
+    creative.save(out / d.path)
+    checks = brand_check(creative, layout, logo)
+    if not checks["pass"]:
+        log.warning("[%s] brand check failed: %s", d.path, checks)
+    return d.record(status="built", source=source["kind"], brand_checks=checks)
+
+
 def render_phase(cfg: Config, campaign: dict, plans: list[MarketPlan], sources: dict, out: Path) -> list[dict]:
-    items = []
-    for p in plans:
-        for prod in campaign["products"]:
-            src = sources.get((p.ctx.id, prod["id"]), {})
-            image = Image.open(src["path"]).convert("RGB") if src.get("path") else None
-            for ch_id in campaign.get("channels", ["social"]):
-                channel = cfg.channels[ch_id]
-                for fmt in channel["formats"]:
-                    for asset_type in channel["asset_types"]:
-                        rel = Path(p.ctx.id) / prod["id"] / ch_id / asset_type / f"{fmt['id']}.png"
-                        item = {"market": p.ctx.id, "product": prod["id"], "channel": ch_id,
-                                "format": fmt["id"], "asset_type": asset_type, "path": str(rel)}
-                        if p.blocked:
-                            item["status"] = "blocked_legal"
-                        elif asset_type not in GENERATORS:
-                            item["status"] = "planned"
-                        elif image is None:
-                            item.update(status="error", error=src.get("error", "no source image"))
-                        else:
-                            creative, layout, logo = render_static(
-                                image, fmt, p.ctx.brand, p.ctx.partner, p.message, p.cta,
-                                p.ctx.disclaimers(), cfg.root, channel.get("text", {}).get("safe_zone", 0.06))
-                            target = out / rel
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            creative.save(target)
-                            checks = brand_check(creative, layout, logo)
-                            item.update(status="built", source=src["kind"], brand_checks=checks)
-                            if not checks["pass"]:
-                                log.warning("[%s] brand check failed: %s", rel, checks)
-                        items.append(item)
-    return items
+    return [produce(d, plan, sources.get((plan.ctx.id, prod["id"]), {}), cfg.root, out)
+            for plan in plans
+            for prod in campaign["products"]
+            for d in deliverables(cfg, campaign, plan.ctx.id, prod)]
 
 
 # ---------------------------------------------------------------- phase 4

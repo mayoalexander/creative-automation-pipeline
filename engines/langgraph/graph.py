@@ -27,19 +27,17 @@ from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy, Send, interrupt
-from PIL import Image
 
-from engines.vanilla.checks import brand_check, legal_check
+from engines.vanilla.checks import legal_check
 from engines.vanilla.config import load_config, resolve_market
-from engines.vanilla.pipeline import MarketPlan, localize, source_one, write_market_files
+from engines.vanilla.pipeline import (MarketPlan, deliverables, localize, produce, source_one,
+                                     write_market_files)
 from engines.vanilla.providers import build_providers
-from engines.vanilla.render import render_static
 from engines.vanilla.report import build_report, write_outputs
 
 from .models import load_validated
 
 ENGINE = "langgraph"
-GENERATORS = {"static"}
 
 
 class State(TypedDict, total=False):
@@ -123,36 +121,16 @@ def fan_out_render(state: State):
 
 
 def render_creatives(task: dict) -> dict:
+    """One (market, product) branch. The work itself is the shared produce()."""
     cfg = _cfg(task["config_dir"])
     campaign = cfg.campaigns[task["campaign_id"]]
-    plan, prod = task["plan"], task["product"]
-    ctx = resolve_market(cfg, campaign, plan["market"])
-    src = next((s for s in task.get("sources", [])
-                if s["market"] == plan["market"] and s["product"] == prod["id"]), None)
-    image = Image.open(src["path"]).convert("RGB") if src else None
-    out, items = _out(task), []
-    for ch_id in campaign.get("channels", ["social"]):
-        channel = cfg.channels[ch_id]
-        for fmt in channel["formats"]:
-            for asset_type in channel["asset_types"]:
-                rel = Path(plan["market"]) / prod["id"] / ch_id / asset_type / f"{fmt['id']}.png"
-                item = {"market": plan["market"], "product": prod["id"], "channel": ch_id,
-                        "format": fmt["id"], "asset_type": asset_type, "path": str(rel)}
-                if plan["legal_findings"]:
-                    item["status"] = "blocked_legal"
-                elif asset_type not in GENERATORS:
-                    item["status"] = "planned"
-                elif image is None:
-                    item.update(status="error", error="no source image")
-                else:
-                    creative, layout, logo = render_static(
-                        image, fmt, ctx.brand, ctx.partner, plan["message"], plan["cta"],
-                        ctx.disclaimers(), cfg.root, channel.get("text", {}).get("safe_zone", 0.06))
-                    (out / rel).parent.mkdir(parents=True, exist_ok=True)
-                    creative.save(out / rel)
-                    item.update(status="built", source=src["kind"], brand_checks=brand_check(creative, layout, logo))
-                items.append(item)
-    return {"items": items}
+    p, prod = task["plan"], task["product"]
+    plan = MarketPlan(resolve_market(cfg, campaign, p["market"]), p["message"], p["message_source"],
+                      p["cta"], p["legal_findings"])
+    source = next((s for s in task.get("sources", [])
+                   if s["market"] == p["market"] and s["product"] == prod["id"]), {})
+    return {"items": [produce(d, plan, source, cfg.root, _out(task))
+                      for d in deliverables(cfg, campaign, p["market"], prod)]}
 
 
 def approval_gate(state: State) -> dict:

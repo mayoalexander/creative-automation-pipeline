@@ -102,7 +102,8 @@ def _paste_logo(canvas: Image.Image, logo_path: Path, box_w: int, x: int, y: int
 
 def render_static(source: Image.Image, fmt: dict, brand: dict, partner: dict | None,
                   message: str, cta: str | None, disclaimers: list[str], root: Path,
-                  safe_zone: float = 0.06) -> tuple[Image.Image, dict]:
+                  safe_zone: float = 0.06) -> tuple[Image.Image, dict, Image.Image]:
+    """Returns (creative, layout, logo). layout + logo let brand_check verify the pixels."""
     W, H = fmt["width"], fmt["height"]
     colors = brand["assets"]["colors"]
     primary, accent, text_rgb = hex_rgb(colors["primary"]), hex_rgb(colors["accent"]), hex_rgb(colors["text"])
