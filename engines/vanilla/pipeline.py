@@ -157,6 +157,12 @@ def deliverables(cfg: Config, campaign: dict, market: str, product: dict) -> Ite
                                   channel.get("text", {}).get("safe_zone", 0.06))
 
 
+@lru_cache(maxsize=32)
+def _open(path: str) -> Image.Image:
+    """Decode each source once, however many formats are cut from it (renderers never mutate it)."""
+    return Image.open(path).convert("RGB")
+
+
 def generate_static(d: Deliverable, image: Image.Image, plan: MarketPlan, root: Path):
     return render_static(image, d.format, plan.ctx.brand, plan.ctx.partner, plan.message, plan.cta,
                          plan.ctx.disclaimers(), root, d.safe_zone)
@@ -164,12 +170,6 @@ def generate_static(d: Deliverable, image: Image.Image, plan: MarketPlan, root: 
 
 # asset type -> generator. Anything a channel asks for that isn't here is "planned".
 GENERATORS: dict[str, Callable] = {"static": generate_static}
-
-
-@lru_cache(maxsize=32)
-def _open(path: str) -> Image.Image:
-    """Decode each source once, however many formats are cut from it (renderers never mutate it)."""
-    return Image.open(path).convert("RGB")
 
 
 def produce(d: Deliverable, plan: MarketPlan, source: dict, root: Path, out: Path) -> dict:
