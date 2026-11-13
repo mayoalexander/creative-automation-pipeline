@@ -1,0 +1,241 @@
+# Creative Automation Pipeline
+
+A proof of concept that turns **one campaign brief** into **localized, on-brand social ad creatives** for every market, product and aspect ratio, using GenAI only where an asset is missing.
+
+The same workflow is built **three ways**, against **one shared contract** (same config in, same files out, checked by the same tests):
+
+| Engine | What it shows | Run it |
+|---|---|---|
+| **1. `vanilla`** | The pipeline from scratch: plain Python, Pillow, stdlib HTTP | `python -m engines.vanilla run --campaign spring-launch` |
+| **2. `langgraph`** | The same pipeline on open-source frameworks: **LangGraph** orchestration + **Pydantic** validation, parallel fan-out, retries, human approval | `python -m engines.langgraph run --campaign spring-launch` |
+| **3. `iris`** | The same workflow running in production on **IRIS**: Atlas workspace, typed dataset of every creative, per-market approval cards, agent review | `python -m engines.iris run --campaign spring-launch` |
+
+```
+ 1 brief × 4 markets × 2 products × 3 ratios = 24 localized creatives in ~5 s (mock) — 18 h by hand
+```
+
+---
+
+## Quick start
+
+```bash
+# Python 3.12 via uv (or any Python ≥ 3.10 + pip)
+uv venv --python 3.12 && uv pip install -r requirements.txt -r requirements-dev.txt
+
+python scripts/make_sample_assets.py          # sample logos + product shots (lotion left missing on purpose)
+
+# Offline, no API key: deterministic mock image provider
+python -m engines.vanilla run --campaign spring-launch --provider mock
+
+# Real GenAI: put ONE key in .env (see .env.example)
+cp .env.example .env                           # OPENAI_API_KEY=...  or  OPENROUTER_API_KEY=...
+python -m engines.vanilla run --campaign spring-launch --provider openai
+python -m engines.vanilla run --campaign spring-launch --provider openrouter
+
+python -m pytest -q                            # 18 tests, all engines
+```
+
+Other useful commands:
+
+```bash
+python -m engines.vanilla   run --campaign summer-promo --provider mock         # shows a market-specific legal block
+python -m engines.vanilla   run --campaign spring-launch --markets jp,mx         # subset of markets
+python -m engines.vanilla   run --campaign spring-launch --plan-only             # resolve + legal check only
+python -m engines.langgraph run --campaign spring-launch --provider mock         # asks you to approve each market
+python -m engines.langgraph run --campaign spring-launch --auto-approve
+python -m engines.langgraph graph                                                # pipeline as a Mermaid diagram
+python -m engines.iris      run --campaign spring-launch --provider mock         # dry run: prints the IRIS commands
+python -m engines.iris      run --campaign spring-launch --publish               # writes to an IRIS workspace
+python -m engines.iris      sync-approvals --campaign spring-launch              # pull approver ticks back
+```
+
+---
+
+## Example input
+
+The brief only says **what** and **where**. **Who** (audience, locale, local rules) lives in market files, and **how** (logo, colours, legal, tone) lives in brand files. The brief references them by id.
+
+```yaml
+# config/campaigns/spring-launch.yaml
+id: spring-launch
+name: Spring Launch
+brand: acme
+sub_brand: acme-fresh
+partner: sportco
+message: Feel fresh all day
+localized_messages:
+  es-MX: Frescura todo el día
+  ja-JP: 一日中、さわやかに          # de-DE omitted -> translated at run time
+products:
+  - { id: shampoo, name: Acme Fresh Shampoo,     description: a teal shampoo bottle ... }
+  - { id: lotion,  name: Acme Fresh Body Lotion, description: a white pump bottle ... }
+markets: [us, mx, jp, de]
+channels: [social]
+```
+
+```
+config/
+├── org.yaml              operating parameters: regions, velocity target, creative resources, approvers
+├── brands/               acme.yaml (global) · acme-fresh.yaml (sub-brand, parent: acme)
+├── partners/             sportco.yaml (co-brand logo, its own legal words, its own approver)
+├── markets/              us · mx · jp · de — locale, audience, overrides, influencers, affiliate program
+├── channels/             social (built) · newsletter · print · partnership · sponsorship · event
+└── campaigns/            spring-launch · summer-promo
+assets/
+├── brands/acme/logo.png              global logo
+├── markets/jp/logo.png               Japan's katakana lockup (market override)
+├── markets/jp/products/shampoo.png   Japan's localized product shot (beats the global one)
+├── products/shampoo.png              global product shot
+└── (lotion missing)                  -> generated, then cached in assets/generated/
+```
+
+## Example output
+
+```
+output/vanilla/spring-launch/
+├── report.json         totals, per-market breakdown, time saved, GenAI cost
+├── plan.json           every deliverable: built / planned / blocked_legal / error
+├── run.log
+├── jp/
+│   ├── approvals.json  approvers for this market + decision
+│   ├── influencers.json
+│   ├── shampoo/social/static/{1x1,9x16,16x9}.png
+│   └── lotion/social/static/{1x1,9x16,16x9}.png
+├── mx/ · us/ · de/
+```
+
+```
+──────────────────────────────────────────────────────────────────────────
+ SPRING-LAUNCH  ·  engine: vanilla  ·  provider: mock
+──────────────────────────────────────────────────────────────────────────
+ market locale   built  planned  blocked  reuse/gen  brand ✓  message
+ us     en-US        6       12        0        1/1      6/6  Feel fresh all day
+ mx     es-MX        6       12        0        1/1      6/6  Frescura todo el día
+ jp     ja-JP        6       12        0        1/1      6/6  一日中、さわやかに
+ de     de-DE        6       12        0        1/1      6/6  Feel fresh all day  (EN fallback)
+──────────────────────────────────────────────────────────────────────────
+ built 24  ·  planned 48 {'video': 24, 'gif': 24}  ·  blocked 0  ·  errors 0
+ images reused 4  ·  generated 4  ·  brand checks 24/24
+ run 6.2s  ·  manual ≈ 18.0h  ·  saved ≈ 18.0h  ·  GenAI cost $0.16
+──────────────────────────────────────────────────────────────────────────
+```
+
+(`de` falls back to English offline; with an API key it is translated and marked `translated`.)
+
+---
+
+## How it works
+
+```
+   org.yaml ─ brands/ ─ partners/ ─ markets/ ─ channels/ ─ campaign.yaml
+                                 │
+   1. RESOLVE  (per market)      ▼
+      global brand ► sub-brand ► market overrides ► partner (if active here)
+      localize message  ►  legal check (blocks the market if it fails)
+                                 │
+   2. SOURCE   (per market × product, in parallel)
+      market asset ► global asset ► previously generated ► GENERATE (GenAI)
+                                 │
+   3. RENDER   (per market × product × channel × format × asset type)
+      static ──► compose + brand check on the pixels
+      video / gif / sound / vector ──► written to the plan as "planned"
+                                 │
+   4. REPORT   report.json · plan.json · approvals.json · influencers.json
+```
+
+---
+
+## Key design decisions
+
+**1. Markets are their own objects; the brief references them.**
+Region, locale, audience, local assets and local rules live in `markets/<id>.yaml`. A brief lists market ids. Adding a market is one file and no code; every campaign can reuse it; each regional team owns its own file. This meets the "brief includes region and audience" requirement by reference instead of by copying.
+
+**2. Discovery questions are input parameters.**
+How many regions, the velocity target, creative resources and who approves in each market are `org.yaml`, not meeting notes. The same engine serves a different client by swapping config.
+
+**3. Brand hierarchy with merge rules.**
+Precedence: `global brand ► sub-brand ► market override ► partner`. Each section has a rule:
+
+| Section | Rule | Why |
+|---|---|---|
+| assets, marketing | **override** | a market can swap its logo or CTA |
+| legal, compliance | **add-only** | a market can make rules stricter, never looser |
+| partner | can be switched **off** per market | SportCo isn't a partner in Japan |
+
+**4. Legal checks fail closed, per market.**
+A banned word blocks that market only; the others still ship (`summer-promo`: Mexico's translation says *garantizada*, which Mexico's own list bans, so MX is blocked and US ships). Latin words match on word boundaries (*cure* ≠ *secure*); CJK terms match as substrings.
+
+**5. Brand checks run on the rendered pixels, not on intentions.**
+Logo present (pixel comparison against the logo's opaque area), band colour equals the brand primary, headline/band contrast ≥ WCAG AA 4.5:1, headline didn't shrink below a readable size.
+
+**6. The product is never cropped.**
+The source is contained in the area above the text band, over a blurred cover of itself, with feathered edges. One 1:1 source serves 1:1, 9:16 and 16:9 without cutting the product out of frame (a brand-safety choice over a tighter crop).
+
+**7. Reuse before generate, and cache what you generate.**
+Most specific asset wins (market ► global). Generated images are cached by a hash of provider + prompt, so re-runs and other campaigns don't pay twice (second run: 0 generated, 8 reused).
+
+**8. GenAI is a pluggable provider.**
+`openai` (gpt-image-1), `openrouter` (Gemini image, FLUX and others behind one key) or `mock` (offline, deterministic, used by tests). The prompt is built from the product plus the market's audience and the brand's tone.
+
+**9. Channels and asset types are a registry; the core doesn't change.**
+Six channels are configured; **social** and **newsletter** render today. `video`, `gif`, `sound`, `vector` are declared by channels and written to `plan.json` as `planned`, so the client sees the full scope of the campaign. Adding one is a YAML file plus one generator.
+
+**10. Same contract, three engines.**
+`tests/test_contract.py` runs every engine on the same config and asserts identical output paths and totals.
+
+### Why LangGraph for engine 2
+What the framework adds is orchestration, not pixels:
+- **Pydantic** validates the config tree before any API spend (`campaign spring-launch: unknown market 'fr'`, `brands.acme-fresh.assets.colors.primary: String should match pattern…`).
+- **`Send`** fans sourcing and rendering out in parallel (24 creatives in 1.4 s vs 8 s sequential, mock provider).
+- **`RetryPolicy`** on the GenAI node.
+- **`interrupt`** pauses at a per-market approval gate; decisions are written to `approvals.json`.
+- **Checkpointing**: a paused or failed run resumes without regenerating finished work.
+
+Rendering and merge rules are shared with engine 1 on purpose.
+
+```mermaid
+graph TD;
+  __start__ --> validate --> resolve;
+  resolve -.-> source_asset --> plan_render;
+  resolve -.-> plan_render;
+  plan_render -.-> render_creatives --> approval_gate --> report --> __end__;
+```
+
+### Why IRIS for engine 3
+Engines 1 and 2 produce files. In production the campaign needs a place to live: who approves what, what shipped, what's blocked, what's working. Engine 3 runs the same core and makes IRIS the system of record:
+
+| IRIS piece | Use | Pain point / goal |
+|---|---|---|
+| **Atlas board** per campaign | workspace with Approvals and Runs lists | decentralised process (P2) |
+| **Dataset `creative-assets`** | every creative as a typed record, upserted by `external_id` so re-runs don't duplicate | insights at scale (G5, P4) |
+| **Approval card per market** | one checklist task per approver, previews attached; `sync-approvals` reads the ticks back | slow approvals (P3) |
+| **Agent review** (`--agent <id>`) | an IRIS agent reviews each market's localized headline for tone and cultural fit | quality and brand voice (P2) |
+
+It runs **dry by default**: it prints the exact `iris …` commands to `iris_commands.sh` and changes nothing, so the engine can be reviewed without an IRIS account. `--publish` executes them. Commands are run with an argv list (never a shell string), so quotes and Japanese text can't be re-split, and workspace state is saved after every step, so a failed run resumes on the same board.
+
+Verified against a live workspace: 4 approval cards × 3 approver tasks, 72 dataset records (18 per market), 12 preview images; ticking Japan's three tasks and running `sync-approvals` moved JP to `approved` in both `approvals.json` and the dataset.
+
+---
+
+## Assumptions and limitations
+
+- **Input assets** are local PNGs; storage is the local filesystem. Swapping in S3/Azure/Dropbox means replacing `find_asset` and the output writer.
+- **One source image per product per market**; all ratios are composed from it. A production version would generate ratio-native hero images for 9:16 and 16:9.
+- **Translation** uses an LLM only when the brief has no localized line; offline it falls back to English and the report flags it (`EN fallback`). Production would add human linguistic review.
+- **Legal checks** are word lists, not legal review. They catch known-bad phrasing; they don't judge claims.
+- **Brand checks** confirm logo, colour, contrast and size; they don't judge whether the image itself is on-brand.
+- **Influencers** come from config and are marked `verified: false`; discovery against social APIs is out of scope.
+- **Fonts** default to Arial Unicode (macOS) with Linux fallbacks; set `brand.assets.font` for production.
+- Only **static** is rendered; video/gif/sound/vector are planned, not produced.
+- No performance-data loop yet (CTR/conversions back into the dataset), which is the next step for goal 4.
+
+---
+
+## How I used AI
+
+AI was a tool here and I'm accountable for every line.
+
+- **Mine:** the architecture and the decisions above. Starting from discovery (regions, locales, velocity, resources), separating markets from the brief, turning discovery questions into input parameters, the global/sub-brand/partner hierarchy overridable by market, the channel and asset-type registry, influencers/affiliates per market, and building the same workflow three ways against one contract.
+- **AI-assisted (Claude Code):** scaffolding, boilerplate (HTTP wrappers, CLI parsing, report formatting), sample config and assets, first drafts of tests and this README.
+- **How it was checked:** every engine runs offline against the mock provider; 18 tests cover merge precedence, add-only legal rules, word-boundary matching, approvals, validation and the cross-engine contract; rendered output was reviewed visually and fixed where it didn't hold up (text-band layout, hard-edged product paste, an over-clever report line, a wrong test expectation); the IRIS engine was verified against a live workspace by reading the records back, not by trusting exit codes.
+- **TODO (Alex):** after the line-by-line walkthrough, replace this line with what I changed myself and confirm I can explain every module without notes.

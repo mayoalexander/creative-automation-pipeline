@@ -65,3 +65,31 @@ def test_validation_rejects_unknown_market(tmp_path):
         f.write_text(yaml.safe_dump(data, allow_unicode=True))
     with pytest.raises(ValidationError, match="unknown market 'fr'"):
         load_validated(_broken_config(tmp_path, edit))
+
+
+# ------------------------------------------------------------ IRIS engine (dry run: no account needed)
+def test_iris_dry_run_matches_contract_and_touches_nothing(tmp_path, monkeypatch):
+    import subprocess
+    from engines.iris.engine import run as run_iris
+
+    def no_subprocess(*a, **k):
+        raise AssertionError("dry run must not call the iris CLI")
+    monkeypatch.setattr(subprocess, "run", no_subprocess)
+
+    report = run_iris(CONFIG, "spring-launch", str(tmp_path), "mock", publish=False)
+    run_vanilla(CONFIG, "spring-launch", str(tmp_path), "mock")
+    assert built_paths(tmp_path, "iris", "spring-launch") == built_paths(tmp_path, "vanilla", "spring-launch")
+
+    cmds = report["iris"]["commands"]
+    assert cmds[0].startswith("iris atlas create --name 'Creative Pipeline — Spring Launch'")
+    assert sum("atlas add-item" in c for c in cmds) == 4               # one approval card per market
+    # approvers per market: us/mx/de = global + regional + SportCo partner; jp = global + 2 JP roles (SportCo off)
+    assert sum("atlas task-add" in c for c in cmds) == 3 + 3 + 3 + 3
+    assert report["iris"]["records"] == 72                             # every built + planned item
+
+
+def test_iris_skips_approval_card_for_legally_blocked_market(tmp_path):
+    from engines.iris.engine import run as run_iris
+    report = run_iris(CONFIG, "summer-promo", str(tmp_path), "mock", publish=False)
+    titles = [c for c in report["iris"]["commands"] if "atlas add-item" in c]
+    assert any("— US" in c for c in titles) and not any("— MX" in c for c in titles)

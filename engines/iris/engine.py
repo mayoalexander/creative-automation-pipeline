@@ -55,18 +55,25 @@ def _save_state(out: Path, state: dict) -> None:
     _state_file(out).write_text(json.dumps(state, indent=2))
 
 
-def ensure_workspace(iris: IrisCLI, campaign: dict, state: dict) -> dict:
-    if state.get("bloq_id"):
-        return state
-    bloq = iris.run("atlas", "create", "--name", f"Creative Pipeline — {campaign['name']}",
-                    "--description", f"Campaign {campaign['id']}: creatives, approvals and run records", "--json")
-    state["bloq_id"] = iris.first_id(bloq, "bloq_id")
+def ensure_workspace(iris: IrisCLI, campaign: dict, state: dict, save) -> dict:
+    """Create whatever is missing. `save` runs after every step, so a run that fails
+    halfway resumes on the same board instead of creating a second one."""
+    if not state.get("bloq_id"):
+        bloq = iris.run("atlas", "create", "--name", f"Creative Pipeline — {campaign['name']}",
+                        "--description", f"Campaign {campaign['id']}: creatives, approvals and run records",
+                        "--json")
+        state["bloq_id"] = iris.first_id(bloq, "bloq_id")
+        save(state)
     for name in ("Approvals", "Runs"):
-        lst = iris.run("atlas", "create-list", state["bloq_id"], name, "--json")
-        state.setdefault("lists", {})[name] = iris.first_id(lst, "list_id")
-    schema = iris.run("atlas:datasets", "schemas", "create", "--name", DATASET, "--slug", DATASET,
-                      "--bloq", state["bloq_id"], "--fields", json.dumps(DATASET_FIELDS))
-    state["dataset"] = DATASET if schema else None
+        if name not in state.setdefault("lists", {}):
+            lst = iris.run("atlas", "create-list", state["bloq_id"], name, "--json")
+            state["lists"][name] = iris.first_id(lst, "list_id")
+            save(state)
+    if not state.get("dataset"):
+        iris.run("atlas:datasets", "schemas", "create", "--name", DATASET, "--slug", DATASET,
+                 "--bloq", state["bloq_id"], "--fields", json.dumps(DATASET_FIELDS), parse_json=False)
+        state["dataset"] = DATASET
+        save(state)
     return state
 
 
@@ -85,7 +92,8 @@ def push_records(iris: IrisCLI, campaign_id: str, items: list[dict], approvals: 
     return len(rows)
 
 
-def approval_cards(iris: IrisCLI, campaign: dict, report: dict, items: list[dict], out: Path, state: dict) -> None:
+def approval_cards(iris: IrisCLI, campaign: dict, report: dict, items: list[dict], out: Path, state: dict,
+                   save) -> None:
     cards = state.setdefault("cards", {})
     for market, m in report["markets"].items():
         if market in cards or m["blocked"]:
@@ -106,6 +114,7 @@ def approval_cards(iris: IrisCLI, campaign: dict, report: dict, items: list[dict
         if previews:
             iris.run("atlas", "files", "upload", state["bloq_id"], *[str(p) for p in previews],
                      "--item", card_id, "--json")
+        save(state)
 
 
 def agent_review(iris: IrisCLI, agent_id: str, campaign: dict, report: dict) -> dict:
@@ -128,10 +137,11 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None, 
 
     iris = IrisCLI(publish=publish)
     state = _load_state(out) if publish else {}
-    state = ensure_workspace(iris, campaign, state)
+    save = (lambda st: _save_state(out, st)) if publish else (lambda st: None)
+    state = ensure_workspace(iris, campaign, state, save)
     approvals = {m: ("blocked_legal" if d["blocked"] else "pending") for m, d in report["markets"].items()}
     n = push_records(iris, campaign_id, items, approvals, out, state)
-    approval_cards(iris, campaign, report, items, out, state)
+    approval_cards(iris, campaign, report, items, out, state, save)
     if agent_id:
         report["agent_review"] = agent_review(iris, agent_id, campaign, report)
     if publish:
