@@ -158,9 +158,10 @@ def resolve_market(cfg: Config, campaign: dict, market_id: str) -> MarketContext
     market = cfg.markets[market_id]
     overrides = market.get("overrides", {})
 
-    # 1) global brand -> sub-brand   2) then this market's overrides, in the same order.
-    # Market overrides come last so a market beats a sub-brand (more specific wins).
-    brand_ids = [b["id"] for b in brand_chain(cfg, campaign.get("sub_brand") or campaign["brand"])]
+    # 1) global brand -> sub-brand, then 2) this market's overrides, same order.
+    # Market overrides come last, so a market beats a sub-brand: most specific wins.
+    leaf = campaign.get("sub_brand") or campaign["brand"]
+    brand_ids = [b["id"] for b in brand_chain(cfg, leaf)]
     brand: dict = {}
     for bid in brand_ids:
         brand = merge_brand(brand, cfg.brands[bid])

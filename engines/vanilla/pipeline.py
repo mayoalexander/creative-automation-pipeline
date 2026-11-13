@@ -89,8 +89,11 @@ def build_prompt(product: dict, ctx: MarketContext) -> str:
 
 def find_asset(root: Path, product_id: str, market_id: str) -> tuple[Path | None, str]:
     """Most specific wins: market asset -> global asset."""
-    for path, kind in ((root / f"assets/markets/{market_id}/products/{product_id}.png", "reused_market"),
-                       (root / f"assets/products/{product_id}.png", "reused_global")):
+    candidates = (
+        (root / f"assets/markets/{market_id}/products/{product_id}.png", "reused_market"),
+        (root / f"assets/products/{product_id}.png", "reused_global"),
+    )
+    for path, kind in candidates:
         if path.exists():
             return path, kind
     return None, "missing"
