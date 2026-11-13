@@ -1,0 +1,12 @@
+id: de
+name: Germany
+region: emea
+locale: de-DE
+audience:
+  age: 25-54
+  traits: [eco-conscious, quality-first]
+overrides:
+  acme:
+    marketing: { cta: Jetzt kaufen }
+    compliance: { disclaimers: ["Nur solange der Vorrat reicht."] }
+affiliate_program: { enabled: false }

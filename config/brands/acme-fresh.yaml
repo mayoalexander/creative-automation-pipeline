@@ -1,0 +1,10 @@
+# Sub-brand: inherits everything from its parent, overrides what it needs.
+id: acme-fresh
+parent: acme
+name: Acme Fresh
+assets:
+  colors:
+    primary: "#0E7C66"
+    accent: "#B8F2E6"
+marketing:
+  tone: fresh, light, upbeat

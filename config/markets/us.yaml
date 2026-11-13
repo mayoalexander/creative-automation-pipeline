@@ -1,0 +1,10 @@
+id: us
+name: United States
+region: na
+locale: en-US
+audience:
+  age: 25-44
+  traits: [busy professionals, gym-goers]
+influencers:
+  - { handle: "@example_fitcoach", tier: macro, fit: [fitness, wellness], role: partner, status: prospect }
+affiliate_program: { enabled: true, default_commission: 0.10, tracking: utm }

@@ -1,0 +1,20 @@
+# Campaign brief: what and where. WHO and HOW live in markets/ and brands/.
+id: spring-launch
+name: Spring Launch
+brand: acme
+sub_brand: acme-fresh
+partner: sportco
+message: Feel fresh all day
+localized_messages:                 # optional; missing locales are translated by the GenAI text model
+  es-MX: Frescura todo el día
+  ja-JP: 一日中、さわやかに
+  # de-DE intentionally omitted -> translated at run time (or English fallback offline)
+products:
+  - id: shampoo
+    name: Acme Fresh Shampoo
+    description: a teal shampoo bottle with a white cap, citrus and mint
+  - id: lotion
+    name: Acme Fresh Body Lotion
+    description: a white pump bottle of body lotion with teal label, aloe leaves
+markets: [us, mx, jp, de]
+channels: [social]

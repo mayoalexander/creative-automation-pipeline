@@ -1,0 +1,18 @@
+# Second brief: shows a market-specific legal block.
+# The English line is clean, but the Mexico translation says "garantizada",
+# which Mexico's ADD-ONLY legal list bans -> MX is blocked, US still ships.
+id: summer-promo
+name: Summer Promo
+brand: acme
+message: Fresh all summer long
+localized_messages:
+  es-MX: Frescura garantizada todo el verano
+products:
+  - id: shampoo
+    name: Acme Shampoo
+    description: a teal shampoo bottle with a white cap
+  - id: sunscreen
+    name: Acme Daily Sunscreen
+    description: a yellow sunscreen tube with a white cap on a beach towel
+markets: [us, mx]
+channels: [social, newsletter]

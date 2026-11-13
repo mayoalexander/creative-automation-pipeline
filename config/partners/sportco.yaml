@@ -1,0 +1,10 @@
+# Partner brand: co-branded lockup + its own rules.
+id: sportco
+name: SportCo
+active: true
+assets:
+  logo: assets/partners/sportco/logo.png
+placement: bottom-right
+legal:
+  banned_words: [official sponsor]  # partner contract forbids this phrasing
+approvers: [sportco_partnerships]

@@ -1,0 +1,7 @@
+id: event
+name: Events / tours
+formats:
+  - { id: stage,   width: 3840, height: 2160, label: stage screen }
+  - { id: signage, width: 1080, height: 1920, label: digital signage }
+asset_types: [static, video, sound]
+text: { max_chars: 40, safe_zone: 0.08 }

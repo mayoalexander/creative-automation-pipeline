@@ -1,0 +1,35 @@
+# Operating config: the client's discovery answers, captured as input parameters.
+# Same engine, different org.yaml => different client.
+org: acme-global
+
+regions:
+  na: [us]
+  latam: [mx]
+  apac: [jp]
+  emea: [de]
+
+velocity:
+  campaigns_per_month:
+    current: 80
+    target: 300
+
+creative_resources:
+  in_house: { designers: 6, hours_per_week: 240 }
+  agencies:
+    - { name: AgencyX, markets: [mx, us] }
+  # Baseline used for the "time saved" metric: how long one creative takes by hand.
+  manual_minutes_per_creative: 45
+  genai:
+    image_provider: openai          # openai | openrouter | mock
+    image_model: gpt-image-1        # used by the openai provider
+    openrouter_image_model: google/gemini-2.5-flash-image   # used by the openrouter provider
+    image_cost_usd: 0.04            # per generated image, for the cost estimate
+    text_model: gpt-4o-mini         # used only for translation when a market has no localized message
+    budget_per_month_usd: 500
+
+approvers:
+  global: [brand_lead]
+  default: [regional_marketing]
+  by_market:
+    jp: [jp_marketing, jp_legal]
+    mx: [mx_marketing]

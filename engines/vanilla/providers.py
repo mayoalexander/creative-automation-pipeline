@@ -1,0 +1,175 @@
+"""GenAI providers: image generation and message translation.
+
+Each provider has a mock twin so the whole pipeline runs offline (tests, CI,
+demo without a key). The OpenAI calls use only the standard library.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import io
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+from PIL import Image, ImageDraw, ImageFont
+
+OPENAI_URL = "https://api.openai.com/v1"
+
+
+class ProviderError(RuntimeError):
+    pass
+
+
+def _post_json(url: str, payload: dict, api_key: str, timeout: int = 180, retries: int = 2) -> dict:
+    """POST with a small retry on rate limits / server errors."""
+    body = json.dumps(payload).encode()
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            if e.code in (429, 500, 502, 503) and attempt < retries:
+                time.sleep(2 ** attempt * 2)
+                continue
+            raise ProviderError(f"HTTP {e.code}: {detail}") from e
+        except urllib.error.URLError as e:
+            if attempt < retries:
+                time.sleep(2 ** attempt * 2)
+                continue
+            raise ProviderError(str(e)) from e
+    raise ProviderError("unreachable")
+
+
+# ------------------------------------------------------------------ images
+class MockImageProvider:
+    """Deterministic placeholder 'product shot' for offline runs."""
+    name = "mock"
+
+    def generate(self, prompt: str, product: dict) -> Image.Image:
+        seed = int(hashlib.sha1(prompt.encode()).hexdigest()[:6], 16)
+        hue = seed % 360
+        img = Image.new("HSV", (1024, 1024), (int(hue / 360 * 255), 60, 235)).convert("RGB")
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle((372, 260, 652, 860), radius=70, fill=(250, 250, 250))
+        d.rounded_rectangle((452, 170, 572, 270), radius=20, fill=(30, 30, 30))
+        try:
+            f = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 40)
+        except OSError:
+            f = ImageFont.load_default(40)
+        label = product["name"].split()[-1].upper()
+        w = d.textlength(label, font=f)
+        d.text((512 - w / 2, 540), label, font=f, fill=(40, 40, 40))
+        return img
+
+
+class OpenAIImageProvider:
+    """OpenAI Images API (gpt-image-1). Returns base64 PNG."""
+    name = "openai"
+
+    def __init__(self, model: str = "gpt-image-1", api_key: str | None = None):
+        self.model = model
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not self.api_key:
+            raise ProviderError("OPENAI_API_KEY is not set (add it to .env or use --provider mock)")
+
+    def generate(self, prompt: str, product: dict) -> Image.Image:
+        data = _post_json(
+            f"{OPENAI_URL}/images/generations",
+            {"model": self.model, "prompt": prompt, "size": "1024x1024", "n": 1},
+            self.api_key,
+        )
+        b64 = data["data"][0]["b64_json"]
+        return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+
+
+class OpenRouterImageProvider:
+    """Any image model on OpenRouter (Gemini image, FLUX, GPT image...) with one key.
+
+    Uses Chat Completions with `modalities`; images come back as base64 data URLs
+    in choices[0].message.images.
+    """
+    name = "openrouter"
+    URL = "https://openrouter.ai/api/v1/chat/completions"
+
+    def __init__(self, model: str, image_only: bool = False, api_key: str | None = None):
+        self.model = model
+        self.modalities = ["image"] if image_only else ["image", "text"]
+        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        if not self.api_key:
+            raise ProviderError("OPENROUTER_API_KEY is not set (add it to .env or use --provider mock)")
+
+    def generate(self, prompt: str, product: dict) -> Image.Image:
+        data = _post_json(
+            self.URL,
+            {"model": self.model, "modalities": self.modalities,
+             "messages": [{"role": "user", "content": prompt}]},
+            self.api_key,
+        )
+        try:
+            url = data["choices"][0]["message"]["images"][0]["image_url"]["url"]
+        except (KeyError, IndexError) as e:
+            raise ProviderError(f"no image in OpenRouter response: {str(data)[:300]}") from e
+        b64 = url.split(",", 1)[1] if url.startswith("data:") else url
+        return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+
+
+# ------------------------------------------------------------- translation
+class MockTranslator:
+    name = "mock"
+
+    def translate(self, text: str, locale: str) -> str | None:
+        return None  # offline: caller falls back to English and flags it
+
+
+class OpenAITranslator:
+    name = "openai"
+
+    def __init__(self, model: str = "gpt-4o-mini", api_key: str | None = None):
+        self.model = model
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+
+    def translate(self, text: str, locale: str) -> str | None:
+        if not self.api_key:
+            return None
+        data = _post_json(
+            f"{OPENAI_URL}/chat/completions",
+            {
+                "model": self.model,
+                "temperature": 0.2,
+                "messages": [
+                    {"role": "system", "content": (
+                        "You localize short advertising headlines. Return ONLY the localized headline, "
+                        "no quotes, natural for native speakers, about the same length.")},
+                    {"role": "user", "content": f"Locale: {locale}\nHeadline: {text}"},
+                ],
+            },
+            self.api_key,
+            timeout=60,
+        )
+        return data["choices"][0]["message"]["content"].strip().strip('"')
+
+
+def build_providers(kind: str, genai_cfg: dict):
+    if kind == "mock":
+        return MockImageProvider(), MockTranslator()
+    if kind == "openai":
+        return (
+            OpenAIImageProvider(genai_cfg.get("image_model", "gpt-image-1")),
+            OpenAITranslator(genai_cfg.get("text_model", "gpt-4o-mini")),
+        )
+    if kind == "openrouter":
+        # Translation still uses OpenAI if a key is present; otherwise English fallback.
+        return (
+            OpenRouterImageProvider(genai_cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"),
+                                    image_only=genai_cfg.get("openrouter_image_only", False)),
+            OpenAITranslator(genai_cfg.get("text_model", "gpt-4o-mini")),
+        )
+    raise ValueError(f"unknown provider '{kind}' (use openai, openrouter or mock)")

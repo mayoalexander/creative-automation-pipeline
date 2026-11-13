@@ -1,0 +1,17 @@
+# Global brand: the single source of truth every market inherits.
+id: acme
+name: Acme
+assets:
+  logo: assets/brands/acme/logo.png
+  colors:
+    primary: "#0B3D91"
+    accent: "#FFC845"
+    text: "#FFFFFF"
+  font: null                        # null => engine default (Arial Unicode)
+marketing:
+  tone: confident, warm
+  cta: Shop now
+legal:                              # ADD-ONLY: markets may add, never remove
+  banned_words: [guarantee, guaranteed, cure, miracle, "100% safe", "risk-free"]
+compliance:                         # ADD-ONLY
+  disclaimers: []
