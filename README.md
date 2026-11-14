@@ -13,8 +13,20 @@ The same workflow is built **three ways**, against **one shared contract** (same
 | **3. `iris`** | The same workflow running in production on **IRIS**: Atlas workspace, typed dataset of every creative, per-market approval cards, agent review | `python -m engines.iris run --campaign spring-launch` |
 
 ```
- 1 brief × 4 markets × 2 products × 3 ratios = 24 localized creatives in ~5 s (mock) — 18 h by hand
+ 1 brief × 4 markets × 2 products × 3 ratios = 24 localized creatives in ~13 s — about 18 h by hand
 ```
+
+**Real output** (OpenRouter · `google/gemini-2.5-flash-image`, generated where no asset existed):
+
+![Spring Launch, 1:1, every market](docs/examples/spring-launch-1x1-all-markets.jpg)
+
+| US · 1:1 | Japan · 9:16 | Germany · 1:1 (translated) | Mexico · 16:9 |
+|---|---|---|---|
+| ![](docs/examples/us-lotion-1x1.jpg) | ![](docs/examples/jp-shampoo-9x16.jpg) | ![](docs/examples/de-lotion-1x1.jpg) | ![](docs/examples/mx-lotion-16x9.jpg) |
+
+Newsletter channel, parent brand (Acme blue, no partner) — same engine, different config:
+
+![Summer Promo newsletter header](docs/examples/us-sunscreen-newsletter.jpg)
 
 ---
 
@@ -29,10 +41,11 @@ python scripts/make_sample_assets.py          # sample logos + product shots (lo
 # Offline, no API key: deterministic mock image provider
 python -m engines.vanilla run --campaign spring-launch --provider mock
 
-# Real GenAI: put ONE key in .env (see .env.example)
-cp .env.example .env                           # OPENAI_API_KEY=...  or  OPENROUTER_API_KEY=...
-python -m engines.vanilla run --campaign spring-launch --provider openai
-python -m engines.vanilla run --campaign spring-launch --provider openrouter
+# Real GenAI: put ONE key in .env (see .env.example). OpenRouter is the default provider.
+cp .env.example .env                           # OPENROUTER_API_KEY=...  (or OPENAI_API_KEY=...)
+python -m engines.vanilla run --campaign spring-launch                       # images + translation via OpenRouter
+python -m engines.vanilla run --campaign spring-launch --provider openai     # gpt-image-1 direct
+python -m engines.vanilla run --campaign spring-launch --env-file ~/.my/env  # keys from another file
 
 python -m pytest -q                            # 18 tests, all engines
 ```
@@ -108,21 +121,21 @@ output/vanilla/spring-launch/
 
 ```
 ──────────────────────────────────────────────────────────────────────────
- SPRING-LAUNCH  ·  engine: vanilla  ·  provider: mock
+ SPRING-LAUNCH  ·  engine: vanilla  ·  provider: openrouter
 ──────────────────────────────────────────────────────────────────────────
  market locale   built  planned  blocked  reuse/gen  brand ✓  message
- us     en-US        6       12        0        1/1      6/6  Feel fresh all day
+ us     en-US        6       12        0        2/0      6/6  Feel fresh all day
  mx     es-MX        6       12        0        1/1      6/6  Frescura todo el día
- jp     ja-JP        6       12        0        1/1      6/6  一日中、さわやかに
- de     de-DE        6       12        0        1/1      6/6  Feel fresh all day  (EN fallback)
+ jp     ja-JP        6       12        0        2/0      6/6  一日中、さわやかに
+ de     de-DE        6       12        0        1/1      6/6  Den ganzen Tag frisch fühlen
 ──────────────────────────────────────────────────────────────────────────
  built 24  ·  planned 48 {'video': 24, 'gif': 24}  ·  blocked 0  ·  errors 0
- images reused 4  ·  generated 4  ·  brand checks 24/24
- run 6.2s  ·  manual ≈ 18.0h  ·  saved ≈ 18.0h  ·  GenAI cost $0.16
+ images reused 6  ·  generated 2  ·  brand checks 24/24
+ run 12.9s  ·  manual ≈ 18.0h  ·  saved ≈ 18.0h  ·  GenAI cost $0.08
 ──────────────────────────────────────────────────────────────────────────
 ```
 
-(`de` falls back to English offline; with an API key it is translated and marked `translated`.)
+(A second run: US and Japan reuse the lotion images generated on the first run, so only Mexico and Germany were paid for. German had no line in the brief and was translated at run time; Spanish and Japanese came from the brief.)
 
 ---
 
@@ -225,7 +238,7 @@ Verified against a live workspace: 4 approval cards × 3 approver tasks, 72 data
 - **One source image per product per market**; all ratios are composed from it. A production version would generate ratio-native hero images for 9:16 and 16:9.
 - **Translation** uses an LLM only when the brief has no localized line; offline it falls back to English and the report flags it (`EN fallback`). Production would add human linguistic review.
 - **Legal checks** are word lists, not legal review. They catch known-bad phrasing; they don't judge claims.
-- **Brand checks** confirm logo, colour, contrast and size; they don't judge whether the image itself is on-brand.
+- **Brand checks** confirm logo, colour, contrast and size on our overlay; they don't judge the generated image itself. In the real run the model printed "ACME FRESH" on the bottle despite "no text, no logos" in the prompt. A production version would add a vision check (OCR or a VLM) on the source image before composing.
 - **Influencers** come from config and are marked `verified: false`; discovery against social APIs is out of scope.
 - **Fonts** default to Arial Unicode (macOS) with Linux fallbacks; set `brand.assets.font` for production.
 - Only **static** is rendered; video/gif/sound/vector are planned, not produced.
