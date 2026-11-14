@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--campaign", required=True)
     r.add_argument("--config", default="config")
     r.add_argument("--out", default="output")
+    r.add_argument("--env-file", default=".env", help="where to read API keys from (default .env)")
     r.add_argument("--provider", choices=["openai", "openrouter", "mock"],
                    help="overrides creative_resources.genai.image_provider in org.yaml")
     r.add_argument("--markets", help="comma-separated subset, e.g. jp,mx")
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s")
-    load_env()
+    load_env(getattr(args, "env_file", ".env"))
     try:
         report = run(args.config, args.campaign, args.out, args.provider,
                      args.markets.split(",") if args.markets else None, args.plan_only)

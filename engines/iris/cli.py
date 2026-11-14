@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--campaign", required=True)
     r.add_argument("--config", default="config")
     r.add_argument("--out", default="output")
+    r.add_argument("--env-file", default=".env", help="where to read API keys from (default .env)")
     r.add_argument("--provider", choices=["openai", "openrouter", "mock"])
     r.add_argument("--markets")
     r.add_argument("--publish", action="store_true", help="write to IRIS (default: dry run)")
@@ -35,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    load_env()
+    load_env(getattr(args, "env_file", ".env"))
     try:
         if args.cmd == "sync-approvals":
             for market, decision in sync_approvals(args.out, args.campaign).items():

@@ -62,17 +62,22 @@ def load_config(config_dir: str | Path) -> Config:
     )
 
 
-def load_env(path: str | Path = ".env") -> None:
-    """Tiny .env reader (stdlib only). Existing environment variables win."""
-    p = Path(path)
+API_KEYS = ("OPENROUTER_API_KEY", "OPENAI_API_KEY")
+
+
+def load_env(path: str | Path = ".env", only: tuple[str, ...] = API_KEYS) -> None:
+    """Tiny .env reader (stdlib only). Imports only the keys this tool uses, so a
+    shared env file's other secrets never enter the process. Existing variables win."""
+    p = Path(path).expanduser()
     if not p.exists():
         return
     for line in p.read_text().splitlines():
-        line = line.strip()
+        line = line.strip().removeprefix("export ")
         if not line or line.startswith("#") or "=" not in line:
             continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key, value = (x.strip() for x in line.split("=", 1))
+        if key in only and value:
+            os.environ.setdefault(key, value.strip('"').strip("'"))
 
 
 # ---------------------------------------------------------------- merging

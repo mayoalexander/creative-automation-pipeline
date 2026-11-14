@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--campaign", required=True)
     r.add_argument("--config", default="config")
     r.add_argument("--out", default="output")
+    r.add_argument("--env-file", default=".env", help="where to read API keys from (default .env)")
     r.add_argument("--provider", choices=["openai", "openrouter", "mock"])
     r.add_argument("--markets")
     r.add_argument("--auto-approve", action="store_true", help="skip the human approval gate")
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    load_env()
+    load_env(getattr(args, "env_file", ".env"))
     try:
         report = run(args.config, args.campaign, args.out, args.provider,
                      args.markets.split(",") if args.markets else None,
