@@ -130,17 +130,20 @@ class MockTranslator:
 
 
 class OpenAITranslator:
+    """Chat-completions translator. OpenRouter speaks the same API, so one class serves both."""
     name = "openai"
+    url = f"{OPENAI_URL}/chat/completions"
+    key_env = "OPENAI_API_KEY"
 
     def __init__(self, model: str = "gpt-4o-mini", api_key: str | None = None):
         self.model = model
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.api_key = api_key or os.environ.get(self.key_env, "")
 
     def translate(self, text: str, locale: str) -> str | None:
         if not self.api_key:
             return None
         data = _post_json(
-            f"{OPENAI_URL}/chat/completions",
+            self.url,
             {
                 "model": self.model,
                 "temperature": 0.2,
@@ -157,6 +160,12 @@ class OpenAITranslator:
         return data["choices"][0]["message"]["content"].strip().strip('"')
 
 
+class OpenRouterTranslator(OpenAITranslator):
+    name = "openrouter"
+    url = OpenRouterImageProvider.URL
+    key_env = "OPENROUTER_API_KEY"
+
+
 def build_providers(kind: str, genai_cfg: dict):
     if kind == "mock":
         return MockImageProvider(), MockTranslator()
@@ -166,10 +175,9 @@ def build_providers(kind: str, genai_cfg: dict):
             OpenAITranslator(genai_cfg.get("text_model", "gpt-4o-mini")),
         )
     if kind == "openrouter":
-        # Translation still uses OpenAI if a key is present; otherwise English fallback.
         return (
             OpenRouterImageProvider(genai_cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"),
                                     image_only=genai_cfg.get("openrouter_image_only", False)),
-            OpenAITranslator(genai_cfg.get("text_model", "gpt-4o-mini")),
+            OpenRouterTranslator(genai_cfg.get("openrouter_text_model", "google/gemini-2.5-flash")),
         )
     raise ValueError(f"unknown provider '{kind}' (use openai, openrouter or mock)")

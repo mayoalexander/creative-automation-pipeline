@@ -20,11 +20,13 @@ creative_resources:
   # Baseline used for the "time saved" metric: how long one creative takes by hand.
   manual_minutes_per_creative: 45
   genai:
-    image_provider: openai          # openai | openrouter | mock
+    image_provider: openrouter      # openrouter | openai | mock
+    openrouter_image_model: google/gemini-2.5-flash-image   # any OpenRouter image model
+    openrouter_image_only: false    # true for image-only models (FLUX, Seedream, gpt-image-*)
+    openrouter_text_model: google/gemini-2.5-flash          # translation
     image_model: gpt-image-1        # used by the openai provider
-    openrouter_image_model: google/gemini-2.5-flash-image   # used by the openrouter provider
     image_cost_usd: 0.04            # per generated image, for the cost estimate
-    text_model: gpt-4o-mini         # used only for translation when a market has no localized message
+    text_model: gpt-4o-mini         # translation, openai provider
     budget_per_month_usd: 500
 
 approvers:
