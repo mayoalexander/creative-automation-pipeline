@@ -13,20 +13,30 @@ The same workflow is built **three ways**, against **one shared contract** (same
 | **3. `iris`** | The same workflow running in production on **IRIS**: Atlas workspace, typed dataset of every creative, per-market approval cards, agent review | `python -m engines.iris run --campaign spring-launch` |
 
 ```
- 1 brief × 4 markets × 2 products × 3 ratios = 24 localized creatives in ~13 s — about 18 h by hand
+ 1 brief × 4 markets × 2 products × 4 creative types × 3 ratios = 96 localized ads — 96/96 brand checks
 ```
 
-**Real output** (OpenRouter · `google/gemini-2.5-flash-image`, generated where no asset existed):
+**Real output** (OpenRouter: Gemini for product shots, FLUX for people; supplied photos reused):
 
-![Spring Launch, 1:1, every market](docs/examples/spring-launch-1x1-all-markets.jpg)
-
-| US · 1:1 | Japan · 9:16 | Germany · 1:1 (translated) | Mexico · 16:9 |
+| Product | Influencer | UGC | Poster |
 |---|---|---|---|
-| ![](docs/examples/us-lotion-1x1.jpg) | ![](docs/examples/jp-shampoo-9x16.jpg) | ![](docs/examples/de-lotion-1x1.jpg) | ![](docs/examples/mx-lotion-16x9.jpg) |
+| ![](docs/examples/type-product.jpg) | ![](docs/examples/type-influencer.jpg) | ![](docs/examples/type-ugc.jpg) | ![](docs/examples/type-poster.jpg) |
 
-Newsletter channel, parent brand (Acme blue, no partner) — same engine, different config:
+One brief, four markets (message localized, Japan with its own logo, partner switched off, disclaimer):
 
-![Summer Promo newsletter header](docs/examples/us-sunscreen-newsletter.jpg)
+| US | Mexico | Japan | Germany (translated at run time) |
+|---|---|---|---|
+| ![](docs/examples/market-us.jpg) | ![](docs/examples/market-mx.jpg) | ![](docs/examples/market-jp.jpg) | ![](docs/examples/market-de.jpg) |
+
+Same creative, three ratios (the layout changes per ratio; 9:16 keeps copy inside the Stories safe zones):
+
+| 1:1 | 9:16 | 16:9 |
+|---|---|---|
+| ![](docs/examples/ratio-1x1.jpg) | ![](docs/examples/ratio-9x16.jpg) | ![](docs/examples/ratio-16x9.jpg) |
+
+Newsletter channel, parent brand (Acme blue, no partner), same engine:
+
+![Summer Promo newsletter header](docs/examples/newsletter.jpg)
 
 ---
 
@@ -112,10 +122,10 @@ output/vanilla/spring-launch/
 ├── plan.json           every deliverable: built / planned / blocked_legal / error
 ├── run.log
 ├── jp/
-│   ├── approvals.json  approvers for this market + decision
+│   ├── approvals.json  approvers (teams) for this market + decision
 │   ├── influencers.json
-│   ├── shampoo/social/static/{1x1,9x16,16x9}.png
-│   └── lotion/social/static/{1x1,9x16,16x9}.png
+│   ├── shampoo/social/{product,influencer,ugc,poster}/static/{1x1,9x16,16x9}.png
+│   └── lotion/social/{product,influencer,ugc,poster}/static/{1x1,9x16,16x9}.png
 ├── mx/ · us/ · de/
 ```
 
@@ -124,18 +134,18 @@ output/vanilla/spring-launch/
  SPRING-LAUNCH  ·  engine: vanilla  ·  provider: openrouter
 ──────────────────────────────────────────────────────────────────────────
  market locale   built  planned  blocked  reuse/gen  brand ✓  message
- us     en-US        6       12        0        2/0      6/6  Feel fresh all day
- mx     es-MX        6       12        0        1/1      6/6  Frescura todo el día
- jp     ja-JP        6       12        0        2/0      6/6  一日中、さわやかに
- de     de-DE        6       12        0        1/1      6/6  Den ganzen Tag frisch fühlen
+ us     en-US       24       48        0        6/0    24/24  Feel fresh all day
+ mx     es-MX       24       48        0        6/0    24/24  Frescura todo el día
+ jp     ja-JP       24       48        0        6/0    24/24  一日中、さわやかに
+ de     de-DE       24       48        0        6/0    24/24  Den ganzen Tag frisch fühlen
 ──────────────────────────────────────────────────────────────────────────
- built 24  ·  planned 48 {'video': 24, 'gif': 24}  ·  blocked 0  ·  errors 0
- images reused 6  ·  generated 2  ·  brand checks 24/24
- run 12.9s  ·  manual ≈ 18.0h  ·  saved ≈ 18.0h  ·  GenAI cost $0.08
+ built 96  ·  planned 192 {'video': 96, 'gif': 96}  ·  blocked 0  ·  errors 0
+ images reused 24  ·  generated 0  ·  brand checks 96/96
+ run 21.2s  ·  manual ≈ 72.0h  ·  saved ≈ 72.0h  ·  GenAI cost $0.0
 ──────────────────────────────────────────────────────────────────────────
 ```
 
-(A second run: US and Japan reuse the lotion images generated on the first run, so only Mexico and Germany were paid for. German had no line in the brief and was translated at run time; Spanish and Japanese came from the brief.)
+(Every image here was reused from earlier runs, so this run cost $0. German had no line in the brief and was translated at run time; Spanish and Japanese came from the brief.)
 
 ---
 
@@ -201,7 +211,7 @@ Six channels are configured; **social** and **newsletter** render today. `video`
 ### Why LangGraph for engine 2
 What the framework adds is orchestration, not pixels:
 - **Pydantic** validates the config tree before any API spend (`campaign spring-launch: unknown market 'fr'`, `brands.acme-fresh.assets.colors.primary: String should match pattern…`).
-- **`Send`** fans sourcing and rendering out in parallel (24 creatives in 1.4 s vs 8 s sequential, mock provider).
+- **`Send`** fans sourcing and rendering out in parallel (measured on the first version: 24 creatives in 1.4 s vs 8 s sequential, mock provider; see the stress test for scale).
 - **`RetryPolicy`** on the GenAI node.
 - **`interrupt`** pauses at a per-market approval gate; decisions are written to `approvals.json`.
 - **Checkpointing**: a paused or failed run resumes without regenerating finished work.
@@ -228,7 +238,7 @@ Engines 1 and 2 produce files. In production the campaign needs a place to live:
 
 It runs **dry by default**: it prints the exact `iris …` commands to `iris_commands.sh` and changes nothing, so the engine can be reviewed without an IRIS account. `--publish` executes them. Commands are run with an argv list (never a shell string), so quotes and Japanese text can't be re-split, and workspace state is saved after every step, so a failed run resumes on the same board.
 
-Verified against a live workspace: 4 approval cards × 3 approver tasks, 72 dataset records (18 per market), 12 preview images; ticking Japan's three tasks and running `sync-approvals` moved JP to `approved` in both `approvals.json` and the dataset.
+Verified against a live workspace (first version, product shots only): 4 approval cards × 3 approver tasks, 72 dataset records (18 per market), 12 preview images; ticking Japan's three tasks and running `sync-approvals` moved JP to `approved` in both `approvals.json` and the dataset.
 
 ---
 
@@ -308,5 +318,5 @@ AI was a tool here and I'm accountable for every line.
 
 - **Mine:** the architecture and the decisions above. Starting from discovery (regions, locales, velocity, resources), separating markets from the brief, turning discovery questions into input parameters, the global/sub-brand/partner hierarchy overridable by market, the channel and asset-type registry, influencers/affiliates per market, and building the same workflow three ways against one contract.
 - **AI-assisted (Claude Code):** scaffolding, boilerplate (HTTP wrappers, CLI parsing, report formatting), sample config and assets, first drafts of tests and this README.
-- **How it was checked:** every engine runs offline against the mock provider; 18 tests cover merge precedence, add-only legal rules, word-boundary matching, approvals, validation and the cross-engine contract; rendered output was reviewed visually and fixed where it didn't hold up (text-band layout, hard-edged product paste, an over-clever report line, a wrong test expectation); the IRIS engine was verified against a live workspace by reading the records back, not by trusting exit codes.
+- **How it was checked:** every engine runs offline against the mock provider; 29 tests cover merge precedence, add-only legal rules, word-boundary matching, approvals, validation, access control, creative-standard rules, model fallback and the cross-engine contract; rendered output was reviewed visually and fixed where it didn't hold up (text-band layout, hard-edged product paste, an over-clever report line, a wrong test expectation); the IRIS engine was verified against a live workspace by reading the records back, not by trusting exit codes.
 - **TODO (Alex):** after the line-by-line walkthrough, replace this line with what I changed myself and confirm I can explain every module without notes.
