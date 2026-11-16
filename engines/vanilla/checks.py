@@ -41,7 +41,6 @@ def contrast_ratio(a, b) -> float:
 
 
 def brand_check(img: Image.Image, layout: dict, logo: Image.Image) -> dict:
-    W, H = layout["size"]
     results = {}
 
     # 1. logo present: the pixels where the logo is opaque must match the logo
@@ -52,20 +51,19 @@ def brand_check(img: Image.Image, layout: dict, logo: Image.Image) -> dict:
     mean_diff = sum(ImageStat.Stat(diff, mask).mean) / 3 if mask.getbbox() else 255
     results["logo_present"] = {"pass": mean_diff < 12, "mean_pixel_diff": round(mean_diff, 1)}
 
-    # 2. brand colour: sample the band away from text
-    sample = img.getpixel((2, H - 2))
+    # 2. brand colour: a point the layout guarantees is pure brand colour
+    sample = img.getpixel(layout["brand_sample"])
     expected = layout["band_color"]
     dist = max(abs(a - b) for a, b in zip(sample, expected))
     results["brand_color"] = {"pass": dist <= 6, "sampled": "#%02X%02X%02X" % sample[:3],
                               "expected": "#%02X%02X%02X" % expected}
 
-    # 3. legibility: WCAG AA contrast between headline and band (4.5:1)
-    ratio = contrast_ratio(layout["text_color"], expected)
+    # 3. legibility: WCAG AA contrast between the headline and the pixels actually behind it
+    ratio = contrast_ratio(layout["text_color"], layout["text_bg"])
     results["text_contrast"] = {"pass": ratio >= 4.5, "ratio": round(ratio, 2)}
 
     # 4. headline didn't have to shrink to an unreadable size
-    min_px = round(min(W, H) * 0.035)
-    results["headline_size"] = {"pass": layout["headline_font_size"] > min_px,
+    results["headline_size"] = {"pass": layout["headline_font_size"] > layout["min_headline"],
                                 "px": layout["headline_font_size"]}
 
     results["pass"] = all(v["pass"] for v in results.values() if isinstance(v, dict))

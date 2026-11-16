@@ -12,20 +12,30 @@ ROOT = Path(__file__).resolve().parent.parent
 FONT = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
 
 
-def font(size: int) -> ImageFont.FreeTypeFont:
-    try:
-        return ImageFont.truetype(FONT, size)
-    except OSError:
-        return ImageFont.load_default(size)
+FACES = {"latin": ("/System/Library/Fonts/Avenir Next.ttc", 8), "cjk": ("/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc", 0)}
+
+
+def font(size: int, text: str = "A") -> ImageFont.FreeTypeFont:
+    path, index = FACES["cjk" if any("\u3000" <= c <= "\u9fff" for c in text) else "latin"]
+    for p, i in ((path, index), (FONT, 0)):
+        try:
+            return ImageFont.truetype(p, size, index=i)
+        except OSError:
+            continue
+    return ImageFont.load_default(size)
 
 
 def logo(path: Path, text: str, fg: str, bg: str) -> None:
-    img = Image.new("RGBA", (600, 200), (0, 0, 0, 0))
+    """A wordmark chip: heavy type, tight tracking, a small mark. Height 160 px; width fits the word."""
+    f = font(92, text)
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    tw = probe.textlength(text, font=f)
+    w, h = round(tw + 190), 160
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((0, 0, 599, 199), radius=40, fill=bg)
-    f = font(96)
-    w = d.textlength(text, font=f)
-    d.text(((600 - w) / 2, 40), text, font=f, fill=fg)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), radius=36, fill=bg)
+    d.ellipse((44, 58, 88, 102), outline=fg, width=9)              # the mark: an open ring
+    d.text((112, h / 2 + 2), text, font=f, fill=fg, anchor="lm")
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
 
@@ -55,8 +65,9 @@ if __name__ == "__main__":
     logo(a / "brands/acme/logo.png", "ACME", "#FFFFFF", "#0B3D91")
     logo(a / "markets/jp/logo.png", "アクメ", "#FFFFFF", "#0B3D91")
     logo(a / "partners/sportco/logo.png", "SportCo", "#111111", "#FFC845")
-    # Global product shot for shampoo; Japan gets its own localized shot.
-    product_shot(a / "products/shampoo.png", "#0E7C66", "#FFFFFF", "FRESH", "#E8FFF8", "#9EE6D3")
-    product_shot(a / "markets/jp/products/shampoo.png", "#0E7C66", "#FFFFFF", "さわやか", "#FFF0F5", "#F7C6D9")
-    # lotion: intentionally missing -> generated at run time.
+    # Product photos come from scripts/make_sample_photos.py (photographic stand-ins for client shots);
+    # product_shot() stays as an offline fallback only. Lotion is intentionally missing -> generated.
+    for rel in ("products/shampoo.png", "markets/jp/products/shampoo.png"):
+        if not (a / rel).exists():
+            product_shot(a / rel, "#0E7C66", "#FFFFFF", "FRESH", "#E8FFF8", "#9EE6D3")
     print("sample assets written to", a)

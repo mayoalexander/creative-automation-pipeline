@@ -1,22 +1,33 @@
-"""Compose one static creative: product + message band + logo(s) + disclaimer.
+"""Compose one static ad from one source photo: three layouts, chosen by aspect ratio.
 
-Layout decision: the product is never cropped. The source is CONTAINED in the
-area above the text band and laid over a blurred COVER of itself, so one 1:1
-source works for 1:1, 9:16 and 16:9 without cutting the product out of frame.
+  square  (≈1:1)    full-bleed photo, product placed right of centre, brand gradient from
+                    the left carrying a left-aligned headline and a solid button
+  story   (tall)    product in the middle third; headline in the top and button in the bottom,
+                    both kept inside the zones Stories/Reels leave clear of their own UI
+  split   (wide)    solid brand panel on the left with logo, headline and button; photo right
+
+The source is assumed to be a product shot with the product centred (the prompt asks for
+that; supplied photos are briefed the same way). Where the photo does not cover the frame,
+its own edge colours are extended so the background stays seamless: no blur, no pasted box.
 """
 from __future__ import annotations
 
+import itertools
+import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
-FONT_CANDIDATES = [
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",   # Latin + CJK in one file
-    "/Library/Fonts/Arial Unicode.ttf",
-    "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",   # Linux
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-]
+# (path, face index) per role and script; first one that exists wins. macOS first, then Linux.
+FONTS = {
+    ("headline", "latin"): [("/System/Library/Fonts/Avenir Next.ttc", 8), ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0)],
+    ("button", "latin"): [("/System/Library/Fonts/Avenir Next.ttc", 2), ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0)],
+    ("small", "latin"): [("/System/Library/Fonts/Avenir Next.ttc", 5), ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0)],
+    ("headline", "cjk"): [("/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc", 0), ("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc", 0)],
+    ("button", "cjk"): [("/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc", 0), ("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc", 0)],
+    ("small", "cjk"): [("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc", 0), ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 0)],
+}
+FALLBACK = ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 0)
 
 
 def hex_rgb(value: str) -> tuple[int, int, int]:
@@ -24,159 +35,227 @@ def hex_rgb(value: str) -> tuple[int, int, int]:
     return tuple(int(v[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def resolve_font(preferred: str | None) -> str | None:
-    for path in ([preferred] if preferred else []) + FONT_CANDIDATES:
-        if path and Path(path).exists():
-            return path
-    return None  # Pillow's built-in font
-
-
-def load_font(path: str | None, size: int) -> ImageFont.ImageFont:
-    return ImageFont.truetype(path, size) if path else ImageFont.load_default(size)
-
-
-def cover(img: Image.Image, w: int, h: int) -> Image.Image:
-    scale = max(w / img.width, h / img.height)
-    r = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
-    left, top = (r.width - w) // 2, (r.height - h) // 2
-    return r.crop((left, top, left + w, top + h))
-
-
-def contain(img: Image.Image, w: int, h: int) -> Image.Image:
-    scale = min(w / img.width, h / img.height)
-    return img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
-
-
 def _is_cjk(text: str) -> bool:
     return any("　" <= ch <= "鿿" or "가" <= ch <= "힯" for ch in text)
 
 
-def wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
-    """Word-wrap Latin text; character-wrap CJK (no spaces between words)."""
-    units = list(text) if _is_cjk(text) else text.split()
-    joiner = "" if _is_cjk(text) else " "
-    lines, line = [], ""
+def font(role: str, text: str, size: int, brand_font: str | None = None) -> ImageFont.ImageFont:
+    script = "cjk" if _is_cjk(text) else "latin"
+    candidates = ([(brand_font, 0)] if brand_font and script == "latin" and role == "headline" else []) + FONTS[(role, script)] + [FALLBACK]
+    for path, index in candidates:
+        if path and Path(path).exists():
+            return ImageFont.truetype(path, size, index=index)
+    return ImageFont.load_default(size)
+
+
+NO_LINE_START = set("、。，．！？」』）〕ーぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ")
+
+
+def _units(draw, text: str, f, max_w: int, split: bool = True) -> tuple[list[str], str]:
+    """Breakable units. Latin: words. Japanese: phrases ending at 、。！？ (split into single
+    characters only if a phrase is wider than the line), never starting a line with 、 or small kana."""
+    if not _is_cjk(text):
+        return text.split(), " "
+    units = []
+    for phrase in re.findall(r"[^、。！？]+[、。！？]?|[、。！？]", text):
+        units += [phrase] if not split or draw.textlength(phrase, font=f) <= max_w else list(phrase)
+    glued: list[str] = []
     for u in units:
-        trial = f"{line}{joiner}{u}" if line else u
-        if draw.textlength(trial, font=font) <= max_w:
-            line = trial
+        if glued and u[0] in NO_LINE_START:
+            glued[-1] += u
         else:
-            if line:
-                lines.append(line)
-            line = u
-    if line:
-        lines.append(line)
-    return lines
+            glued.append(u)
+    return glued, ""
 
 
-def fit_text(draw, text, font_path, max_w, max_h, start, minimum, max_lines=3):
-    """Largest font size whose wrapped text fits the box. Returns (font, lines, size)."""
-    size = start
-    while size >= minimum:
-        f = load_font(font_path, size)
-        lines = wrap(draw, text, f, max_w)
-        if len(lines) <= max_lines and len(lines) * size * 1.2 <= max_h:
-            return f, lines, size
-        size -= 2
-    f = load_font(font_path, minimum)
-    return f, wrap(draw, text, f, max_w)[:max_lines], minimum
+def wrap(draw: ImageDraw.ImageDraw, text: str, f, max_w: int, split: bool = True) -> list[str]:
+    """Fewest lines that fit, then the most even split of those lines (no orphan words)."""
+    units, joiner = _units(draw, text, f, max_w, split)
+    width = lambda group: draw.textlength(joiner.join(group), font=f)
+    greedy, line = [], []
+    for u in units:
+        if line and width(line + [u]) > max_w:
+            greedy.append(line)
+            line = []
+        line.append(u)
+    greedy += [line] if line else []
+    n, best = len(greedy), None
+    if 1 < n <= len(units) <= 14:                    # tiny search space: headlines are short
+        for cuts in itertools.combinations(range(1, len(units)), n - 1):
+            groups = [units[a:b] for a, b in zip((0,) + cuts, cuts + (len(units),))]
+            widest = max(width(g) for g in groups)
+            if widest <= max_w and (best is None or widest < best[0]):
+                best = (widest, groups)
+    return [joiner.join(g) for g in (best[1] if best else greedy)]
 
 
-def feather_mask(size: tuple[int, int], fraction: float = 0.08) -> Image.Image:
-    """Alpha mask that fades the outer `fraction` of each edge to transparent."""
-    w, h = size
-    edge = max(1, round(min(w, h) * fraction))
-    mask = Image.new("L", size, 0)
-    ImageDraw.Draw(mask).rectangle((edge, edge, w - edge, h - edge), fill=255)
-    return mask.filter(ImageFilter.GaussianBlur(edge / 2))
+def fit(draw, text, role, box_w, box_h, start, minimum, brand_font=None, max_lines=3):
+    """Largest size whose wrapped text fits the box. Returns (font, lines, size, line_height).
+    Japanese phrases are kept whole if any size allows it; only then are they split by character."""
+    for split in (False, True):
+        for size in range(start, minimum - 1, -2):
+            f = font(role, text, size, brand_font)
+            lines, lh = wrap(draw, text, f, box_w, split), round(size * 1.08)
+            fits = all(draw.textlength(l, font=f) <= box_w for l in lines)
+            if fits and len(lines) <= max_lines and len(lines) * lh <= box_h:
+                return f, lines, size, lh
+    f = font(role, text, minimum, brand_font)
+    return f, wrap(draw, text, f, box_w)[:max_lines], minimum, round(minimum * 1.08)
 
 
-def _paste_logo(canvas: Image.Image, logo_path: Path, box_w: int, x: int, y: int, align_right=False):
-    logo = Image.open(logo_path).convert("RGBA")
-    logo = contain(logo, box_w, box_w)
-    if align_right:
-        x = x - logo.width
+# ------------------------------------------------------------------ photo placement
+def edge_colour(img: Image.Image, side: str) -> tuple[int, int, int]:
+    w, h = img.size
+    strip = {"top": (0, 0, w, 6), "bottom": (0, h - 6, w, h), "left": (0, 0, 6, h), "right": (w - 6, 0, w, h)}[side]
+    return tuple(round(c) for c in ImageStat.Stat(img.crop(strip)).median)
+
+
+def place(src: Image.Image, W: int, H: int, cx: float, cy: float, scale: float) -> Image.Image:
+    """Put the (centred) product at (cx, cy) of a W×H frame, scaled so the source is `scale`×H tall.
+    Uncovered frame is filled with the photo's own edge colours, blended vertically."""
+    s = scale * H / src.height
+    img = src.resize((round(src.width * s), round(src.height * s)), Image.LANCZOS)
+    x, y = round(cx * W - img.width / 2), round(cy * H - img.height / 2)
+    top, bottom = edge_colour(img, "top"), edge_colour(img, "bottom")
+    canvas = Image.new("RGB", (W, H))
+    for row in range(H):  # seamless ground: top colour above the photo, bottom colour below
+        t = min(1, max(0, (row - y) / max(img.height, 1)))
+        canvas.paste(tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)), (0, row, W, row + 1))
+    edge = max(2, round(min(img.size) * 0.04))       # feather the photo's edges into the ground
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rectangle((edge, edge, img.width - edge, img.height - edge), fill=255)
+    canvas.paste(img, (x, y), mask.filter(ImageFilter.GaussianBlur(edge / 2)))
+    return canvas
+
+
+def gradient(canvas: Image.Image, colour, box, axis: str, a0: float, a1: float, solid_until: float = 0.0) -> None:
+    """Brand-colour scrim over `box`, opacity a0 → a1 along `axis` ('x' or 'y'); fully solid for
+    the first `solid_until` of the run, so the brand colour exists un-blended somewhere."""
+    x0, y0, x1, y1 = box
+    n = (x1 - x0) if axis == "x" else (y1 - y0)
+    alpha = Image.new("L", (x1 - x0, y1 - y0))
+    d = ImageDraw.Draw(alpha)
+    for i in range(n):
+        t = i / max(n - 1, 1)
+        a = a0 if t <= solid_until else a0 + (a1 - a0) * ((t - solid_until) / max(1 - solid_until, 1e-6)) ** 1.4
+        if axis == "x":
+            d.line([(i, 0), (i, y1 - y0)], fill=round(255 * a))
+        else:
+            d.line([(0, i), (x1 - x0, i)], fill=round(255 * a))
+    canvas.paste(Image.new("RGB", alpha.size, colour), (x0, y0), alpha)
+
+
+# ------------------------------------------------------------------ pieces
+def paste_logo(canvas, path: Path, height: int, x: int, y: int):
+    logo = Image.open(path).convert("RGBA")
+    logo = logo.resize((round(logo.width * height / logo.height), height), Image.LANCZOS)
     canvas.paste(logo, (x, y), logo)
     return (x, y, logo.width, logo.height), logo
 
 
+def draw_lines(draw, lines, f, lh, x, y, colour, align="left", box_w=0):
+    for line in lines:
+        lx = x + (box_w - draw.textlength(line, font=f)) / 2 if align == "center" else x
+        draw.text((lx, y), line, font=f, fill=colour)
+        y += lh
+    return y
+
+
+def button(draw, text, x, y, size, bg, fg, align="left", box_w=0):
+    f = font("button", text, size)
+    w = draw.textlength(text, font=f)
+    pad_x, h = size * 1.1, size * 2.3
+    bx = x + (box_w - (w + 2 * pad_x)) / 2 if align == "center" else x
+    draw.rounded_rectangle((bx, y, bx + w + 2 * pad_x, y + h), radius=h / 2, fill=bg)
+    draw.text((bx + pad_x, y + h / 2), text, font=f, fill=fg, anchor="lm")
+    return y + h
+
+
+def mean_colour(img: Image.Image, box) -> tuple[int, int, int]:
+    x0, y0, x1, y1 = (max(0, round(v)) for v in box)
+    return tuple(round(c) for c in ImageStat.Stat(img.crop((x0, y0, max(x0 + 1, x1), max(y0 + 1, y1))).convert("RGB")).mean)
+
+
+def layout_for(w: int, h: int) -> str:
+    r = w / h
+    return "split" if r >= 1.3 else "story" if r <= 0.75 else "square"
+
+
+# ------------------------------------------------------------------ the ad
 def render_static(source: Image.Image, fmt: dict, brand: dict, partner: dict | None,
                   message: str, cta: str | None, disclaimers: list[str], root: Path,
                   safe_zone: float = 0.06) -> tuple[Image.Image, dict, Image.Image]:
     """Returns (creative, layout, logo). layout + logo let brand_check verify the pixels."""
     W, H = fmt["width"], fmt["height"]
     colors = brand["assets"]["colors"]
-    primary, accent, text_rgb = hex_rgb(colors["primary"]), hex_rgb(colors["accent"]), hex_rgb(colors["text"])
-    font_path = resolve_font(brand["assets"].get("font"))
-    safe = round(min(W, H) * safe_zone)
+    primary, text_rgb = hex_rgb(colors["primary"]), hex_rgb(colors["text"])
+    brand_font = brand["assets"].get("font")
+    kind, m = layout_for(W, H), round(min(W, H) * max(safe_zone, 0.06))
 
-    # 1. background: blurred cover of the source, slightly dimmed
-    canvas = cover(source, W, H).filter(ImageFilter.GaussianBlur(radius=max(W, H) // 40))
-    canvas = ImageEnhance.Brightness(canvas).enhance(0.9).convert("RGBA")
+    if kind == "square":
+        canvas = place(source, W, H, cx=0.73, cy=0.54, scale=1.12)
+        # solid behind the whole text column (white on brand colour must clear 4.5:1), then fade
+        gradient(canvas, primary, (0, 0, round(W * 0.70), H), "x", 1.0, 0.0, solid_until=0.68)
+        text_box = (m, round(H * 0.30), round(W * 0.46) - m, round(H * 0.42))   # x, y, w, h
+        align, brand_sample = "left", (3, H // 2)
+    elif kind == "story":
+        canvas = place(source, W, H, cx=0.5, cy=0.57, scale=0.62)
+        gradient(canvas, primary, (0, 0, W, round(H * 0.42)), "y", 1.0, 0.0, solid_until=0.80)
+        gradient(canvas, primary, (0, round(H * 0.70), W, H), "y", 0.0, 1.0)
+        top = round(H * 0.13)                          # Stories UI covers ~13% at the top
+        text_box = (m, top + round(H * 0.06), W - 2 * m, round(H * 0.15))
+        align, brand_sample = "center", (W - 3, 3)
+    else:  # split
+        panel = round(W * 0.42)
+        canvas = place(source, W, H, cx=0.71, cy=0.52, scale=1.0)
+        gradient(canvas, primary, (0, 0, panel + round(W * 0.10), H), "x", 1.0, 0.0, solid_until=panel / (panel + W * 0.10))
+        text_box = (m, round(H * 0.30), panel - 2 * m, round(H * 0.36))
+        align, brand_sample = "left", (3, H - 3)
 
-    # 2. text band at the bottom in the brand's primary colour
-    band_h = round(H * (0.30 if W >= H else 0.26))
-    band_top = H - band_h
+    canvas = canvas.convert("RGBA")
     draw = ImageDraw.Draw(canvas)
-    draw.rectangle((0, band_top, W, H), fill=primary)
 
-    # 3. product: contained in the area above the band, never cropped,
-    #    with feathered edges so it blends into the blurred background
-    area_w, area_h = W - 2 * safe, band_top - 2 * safe
-    product = contain(source, area_w, area_h)
-    canvas.paste(product, ((W - product.width) // 2, safe + (area_h - product.height) // 2),
-                 feather_mask(product.size))
-
-    # 4. logos: brand top-left, partner top-right (only if active in this market)
-    logo_w = round(min(W, H) * 0.22)
-    logo_box, logo_img = _paste_logo(canvas, root / brand["assets"]["logo"], logo_w, safe, safe)
+    # logo (+ partner lockup "×  partner") — top left; on a story, below the Stories header
+    logo_h = round(min(W, H) * (0.075 if kind != "story" else 0.06))
+    ly = round(H * 0.13) - logo_h - round(H * 0.015) if kind == "story" else m
+    logo_box, logo_img = paste_logo(canvas, root / brand["assets"]["logo"], logo_h, m, ly)
     partner_box = None
     if partner and partner.get("assets", {}).get("logo"):
-        partner_box, _ = _paste_logo(canvas, root / partner["assets"]["logo"], round(logo_w * 0.8),
-                                     W - safe, safe, align_right=True)
+        xf = font("small", "×", round(logo_h * 0.55))
+        xx = m + logo_box[2] + round(logo_h * 0.35)
+        draw.text((xx, ly + logo_h / 2), "×", font=xf, fill=text_rgb, anchor="lm")
+        partner_box, _ = paste_logo(canvas, root / partner["assets"]["logo"], round(logo_h * 0.72),
+                                    xx + round(logo_h * 0.55), ly + round(logo_h * 0.14))
 
-    # 5. message (+ CTA) inside the band
-    draw = ImageDraw.Draw(canvas)
-    disc_size = max(14, round(min(W, H) * 0.022))
-    disc_h = (disc_size * 1.3 * len(disclaimers)) if disclaimers else 0
-    cta_size = max(18, round(min(W, H) * 0.035))
-    cta_h = cta_size * 2.2 if cta else 0
-    text_box_h = band_h - 2 * safe * 0.6 - cta_h - disc_h
-    font, lines, size = fit_text(draw, message, font_path, W - 2 * safe, text_box_h,
-                                 start=round(min(W, H) * 0.09), minimum=round(min(W, H) * 0.035))
-    # centre the headline + CTA block vertically in the space above the disclaimer
-    block_h = len(lines) * size * 1.2 + cta_h
-    y = band_top + max(safe * 0.6, (band_h - disc_h - block_h) / 2)
-    for line in lines:
-        lw = draw.textlength(line, font=font)
-        draw.text(((W - lw) / 2, y), line, font=font, fill=text_rgb)
-        y += size * 1.2
+    # headline
+    x, y, bw, bh = text_box
+    start = round(min(W, H) * (0.115 if kind == "square" else 0.10 if kind == "split" else 0.105))
+    f, lines, size, lh = fit(draw, message, "headline", bw, bh, start, round(min(W, H) * 0.045), brand_font)
+    block_h = len(lines) * lh
+    if kind == "story":
+        y = y + (bh - block_h) // 2
+    text_bg = mean_colour(canvas, (x, y, x + bw, y + block_h))       # the real pixels behind the words
+    end = draw_lines(draw, lines, f, lh, x, y, text_rgb, align, bw)
 
+    # button
+    bsize = max(16, round(min(W, H) * (0.046 if kind == "story" else 0.034)))
     if cta:
-        cf = load_font(font_path, cta_size)
-        cw = draw.textlength(cta, font=cf)
-        pad = cta_size * 0.8
-        x0, y0 = (W - cw) / 2 - pad, y + cta_size * 0.5
-        draw.rounded_rectangle((x0, y0, x0 + cw + 2 * pad, y0 + cta_size * 1.6), radius=cta_size, fill=accent)
-        draw.text((x0 + pad, y0 + cta_size * 0.25), cta, font=cf, fill=primary)
+        by = round(H * 0.80) if kind == "story" else end + round(size * 0.55)   # story: above the reply bar
+        button(draw, cta, x, by, bsize, text_rgb, primary, align, bw)
 
+    # disclaimers, small, at the bottom of the text side
     if disclaimers:
-        df = load_font(font_path, disc_size)
-        dy = H - safe * 0.4 - disc_h
+        dsize = max(13, round(min(W, H) * 0.02))
+        dy = H - m - dsize * 1.3 * len(disclaimers)
         for d in disclaimers:
-            dw = draw.textlength(d, font=df)
-            draw.text(((W - dw) / 2, dy), d, font=df, fill=text_rgb)
-            dy += disc_size * 1.3
+            df = font("small", d, dsize)
+            dx = x + (bw - draw.textlength(d, font=df)) / 2 if align == "center" else x
+            draw.text((dx, dy), d, font=df, fill=text_rgb)
+            dy += dsize * 1.3
 
     layout = {
-        "size": (W, H),
-        "logo_box": logo_box,
-        "partner_box": partner_box,
-        "band_box": (0, band_top, W, H),
-        "band_color": primary,
-        "text_color": text_rgb,
-        "headline_font_size": size,
-        "headline_lines": len(lines),
-        "font": font_path,
+        "kind": kind, "size": (W, H), "logo_box": logo_box, "partner_box": partner_box,
+        "band_color": primary, "brand_sample": brand_sample, "text_color": text_rgb, "text_bg": text_bg,
+        "headline_font_size": size, "headline_lines": len(lines), "min_headline": round(min(W, H) * 0.045),
     }
     return canvas.convert("RGB"), layout, logo_img
