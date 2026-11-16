@@ -59,7 +59,8 @@ def build_report(engine: str, cfg, campaign: dict, plans, sources: dict, items: 
             "run_seconds": round(seconds, 1),
             "manual_estimate_hours": round(manual_min / 60, 1),
             "time_saved_hours": round(manual_min / 60 - seconds / 3600, 1),
-            "genai_cost_usd": round(generated * genai.get("image_cost_usd", 0), 2),
+            # placeholder images from the offline mock cost nothing; only real providers are priced
+            "genai_cost_usd": 0.0 if provider_name == "mock" else round(generated * genai.get("image_cost_usd", 0), 2),
             "velocity_target_campaigns_per_month": target,
             "compute_hours_for_target": round(seconds * target / 3600, 1) if target else None,
         },

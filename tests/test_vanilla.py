@@ -81,6 +81,7 @@ def test_output_contract(tmp_path):
     types = ("product", "influencer", "ugc", "poster")
     assert report["totals"]["built"] == 4 * 2 * len(types) * 3          # markets x products x types x ratios
     assert report["totals"]["brand_checks_passed"] == report["totals"]["built"]
+    assert report["efficiency"]["genai_cost_usd"] == 0.0                # the offline mock is free
     for m in ("us", "mx", "jp", "de"):
         for p in ("shampoo", "lotion"):
             for c in types:
