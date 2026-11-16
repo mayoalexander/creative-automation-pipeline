@@ -94,3 +94,17 @@ def test_market_specific_legal_block(tmp_path):
     report = run(str(CONFIG), "summer-promo", str(tmp_path), "mock")
     assert report["markets"]["mx"]["blocked"] > 0 and report["markets"]["mx"]["built"] == 0
     assert report["markets"]["us"]["built"] > 0
+
+
+# ------------------------------------------------------------ explain (provenance)
+def test_explain_names_the_layer_that_won(cfg):
+    from engines.vanilla.explain import explain_market
+    e = explain_market(cfg, cfg.campaigns["spring-launch"], "jp")
+    by = {s["setting"]: e["layers"][s["layer"]]["file"] for s in e["settings"]}
+    assert by["logo"] == "markets/jp.yaml"                 # market beats brand
+    assert by["primary colour"] == "brands/acme-fresh.yaml"  # sub-brand beats parent
+    tone = next(s["value"] for s in e["settings"] if s["setting"] == "tone")
+    assert tone == "soft, seasonal (sakura)"                # caught a YAML flow-map comma bug once
+    banned = e["lists"][0]["items"]
+    assert {"value": "cure", "layer": 0} in banned and any(i["value"] == "治る" for i in banned)
+    assert e["partner"]["active"] is False and e["partner"]["switched_off_by"] == "markets/jp.yaml"

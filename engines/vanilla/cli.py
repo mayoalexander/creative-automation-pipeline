@@ -5,12 +5,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
 from pathlib import Path
 
 from .config import load_config, load_env
+from .explain import explain_market, print_explain
 from .pipeline import render_phase, resolve_phase, source_phase, write_market_files
 from .providers import ProviderError, build_providers
 from .report import build_report, print_report, write_outputs
@@ -47,6 +49,23 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
     return report
 
 
+def explain_cmd(args) -> int:
+    cfg = load_config(args.config)
+    if args.all:
+        pairs = [(c, m) for c in cfg.campaigns.values() for m in c["markets"]]
+    elif args.campaign and args.market:
+        pairs = [(cfg.campaigns[args.campaign], args.market)]
+    else:
+        raise SystemExit("use --campaign X --market Y, or --all")
+    results = [explain_market(cfg, c, m) for c, m in pairs]
+    if args.json:
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+    else:
+        for r in results:
+            print_explain(r)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="engines.vanilla", description="Creative automation pipeline (vanilla)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -60,7 +79,16 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--markets", help="comma-separated subset, e.g. jp,mx")
     r.add_argument("--plan-only", action="store_true", help="resolve + legal check only, render nothing")
     r.add_argument("-v", "--verbose", action="store_true")
+    x = sub.add_parser("explain", help="show which config file set each value for a market")
+    x.add_argument("--campaign")
+    x.add_argument("--market")
+    x.add_argument("--all", action="store_true", help="every campaign × market")
+    x.add_argument("--config", default="config")
+    x.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.cmd == "explain":
+        return explain_cmd(args)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s")
