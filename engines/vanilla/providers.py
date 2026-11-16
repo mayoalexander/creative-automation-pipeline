@@ -53,6 +53,9 @@ class MockImageProvider:
     """Deterministic placeholder 'product shot' for offline runs."""
     name = "mock"
 
+    def for_models(self, preferred: list[str], fallbacks: list[str] = ()):
+        return self
+
     def generate(self, prompt: str, product: dict) -> Image.Image:
         seed = int(hashlib.sha1(prompt.encode()).hexdigest()[:6], 16)
         hue = seed % 360
@@ -80,6 +83,9 @@ class OpenAIImageProvider:
         if not self.api_key:
             raise ProviderError("OPENAI_API_KEY is not set (add it to .env or use --provider mock)")
 
+    def for_models(self, preferred: list[str], fallbacks: list[str] = ()):
+        return self   # direct OpenAI has one image model here
+
     def generate(self, prompt: str, product: dict) -> Image.Image:
         data = _post_json(
             f"{OPENAI_URL}/images/generations",
@@ -99,12 +105,20 @@ class OpenRouterImageProvider:
     name = "openrouter"
     URL = "https://openrouter.ai/api/v1/chat/completions"
 
-    def __init__(self, model: str, image_only: bool = False, api_key: str | None = None):
+    def __init__(self, model: str, image_only: bool | None = None, api_key: str | None = None):
         self.model = model
+        self.label = f"openrouter:{model}"
+        if image_only is None:   # models that answer with text too (Gemini, GPT-5 image) vs image-only (FLUX, ...)
+            image_only = not model.startswith(("google/gemini", "openai/gpt-5"))
         self.modalities = ["image"] if image_only else ["image", "text"]
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         if not self.api_key:
             raise ProviderError("OPENROUTER_API_KEY is not set (add it to .env or use --provider mock)")
+
+    def for_models(self, preferred: list[str], fallbacks: list[str] = ()):
+        """Chain: the creative type's preferred models, then this (default) model, then fallbacks."""
+        chain = list(dict.fromkeys([*preferred, self.model, *fallbacks]))
+        return ChainImageProvider([OpenRouterImageProvider(m, api_key=self.api_key) for m in chain])
 
     def generate(self, prompt: str, product: dict) -> Image.Image:
         data = _post_json(
@@ -116,9 +130,29 @@ class OpenRouterImageProvider:
         try:
             url = data["choices"][0]["message"]["images"][0]["image_url"]["url"]
         except (KeyError, IndexError) as e:
-            raise ProviderError(f"no image in OpenRouter response: {str(data)[:300]}") from e
+            reason = (data.get("choices") or [{}])[0].get("finish_reason", "no image")
+            raise ProviderError(f"refused ({reason})" if reason == "content_filter" else f"no image ({reason})") from e
         b64 = url.split(",", 1)[1] if url.startswith("data:") else url
         return Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+
+
+class ChainImageProvider:
+    """Try models in order; a refusal or error falls through to the next. All reasons are kept."""
+
+    def __init__(self, providers: list):
+        self.providers = providers
+        # cache identity = the first choice; adding a fallback must not invalidate paid-for images
+        self.name = getattr(providers[0], "label", providers[0].name)
+        self.chain = " → ".join(getattr(p, "label", p.name) for p in providers)
+
+    def generate(self, prompt: str, product: dict) -> Image.Image:
+        errors = []
+        for p in self.providers:
+            try:
+                return p.generate(prompt, product)
+            except ProviderError as e:
+                errors.append(f"{getattr(p, 'label', p.name)}: {e}")
+        raise ProviderError(" | ".join(errors))
 
 
 # ------------------------------------------------------------- translation
@@ -176,8 +210,7 @@ def build_providers(kind: str, genai_cfg: dict):
         )
     if kind == "openrouter":
         return (
-            OpenRouterImageProvider(genai_cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"),
-                                    image_only=genai_cfg.get("openrouter_image_only", False)),
+            OpenRouterImageProvider(genai_cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image")),
             OpenRouterTranslator(genai_cfg.get("openrouter_text_model", "google/gemini-2.5-flash")),
         )
     raise ValueError(f"unknown provider '{kind}' (use openai, openrouter or mock)")

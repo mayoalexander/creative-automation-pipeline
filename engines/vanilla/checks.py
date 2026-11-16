@@ -40,23 +40,26 @@ def contrast_ratio(a, b) -> float:
     return (la + 0.05) / (lb + 0.05)
 
 
-def brand_check(img: Image.Image, layout: dict, logo: Image.Image) -> dict:
-    results = {}
+def brand_check(img: Image.Image, layout: dict, logo: Image.Image, rules: dict | None = None,
+                message: str = "") -> dict:
+    results, rules = {}, rules or {}
 
-    # 1. logo present: the pixels where the logo is opaque must match the logo
-    x, y, w, h = layout["logo_box"]
-    region = img.crop((x, y, x + w, y + h)).convert("RGB")
-    mask = logo.split()[-1].point(lambda a: 255 if a > 200 else 0)
-    diff = ImageChops.difference(region, logo.convert("RGB"))
-    mean_diff = sum(ImageStat.Stat(diff, mask).mean) / 3 if mask.getbbox() else 255
-    results["logo_present"] = {"pass": mean_diff < 12, "mean_pixel_diff": round(mean_diff, 1)}
+    # 1. logo present: the pixels where the logo is opaque must match the logo (an organic post has none)
+    if layout.get("logo_box"):
+        x, y, w, h = layout["logo_box"]
+        region = img.crop((x, y, x + w, y + h)).convert("RGB")
+        mask = logo.split()[-1].point(lambda a: 255 if a > 200 else 0)
+        diff = ImageChops.difference(region, logo.convert("RGB"))
+        mean_diff = sum(ImageStat.Stat(diff, mask).mean) / 3 if mask.getbbox() else 255
+        results["logo_present"] = {"pass": mean_diff < 12, "mean_pixel_diff": round(mean_diff, 1)}
 
-    # 2. brand colour: a point the layout guarantees is pure brand colour
-    sample = img.getpixel(layout["brand_sample"])
-    expected = layout["band_color"]
-    dist = max(abs(a - b) for a, b in zip(sample, expected))
-    results["brand_color"] = {"pass": dist <= 6, "sampled": "#%02X%02X%02X" % sample[:3],
-                              "expected": "#%02X%02X%02X" % expected}
+    # 2. brand colour: a point the layout guarantees is pure brand colour (a native/UGC post has none)
+    if layout.get("brand_sample"):
+        sample = img.getpixel(layout["brand_sample"])
+        expected = layout["band_color"]
+        dist = max(abs(a - b) for a, b in zip(sample, expected))
+        results["brand_color"] = {"pass": dist <= 6, "sampled": "#%02X%02X%02X" % sample[:3],
+                                  "expected": "#%02X%02X%02X" % expected}
 
     # 3. legibility: WCAG AA contrast between the headline and the pixels actually behind it
     ratio = contrast_ratio(layout["text_color"], layout["text_bg"])
@@ -65,6 +68,15 @@ def brand_check(img: Image.Image, layout: dict, logo: Image.Image) -> dict:
     # 4. headline didn't have to shrink to an unreadable size
     results["headline_size"] = {"pass": layout["headline_font_size"] > layout["min_headline"],
                                 "px": layout["headline_font_size"]}
+
+    # 5. the creative standard's rules: disclosure, AI-person label, headline length
+    if rules.get("disclosure"):
+        results["disclosure"] = {"pass": layout.get("label") == rules["disclosure"], "drawn": layout.get("label")}
+    if rules.get("people"):
+        results["ai_person_label"] = {"pass": bool(layout.get("synthetic_label")), "drawn": layout.get("synthetic_label")}
+    if rules.get("max_headline_chars"):
+        results["headline_length"] = {"pass": len(message) <= rules["max_headline_chars"],
+                                      "chars": len(message), "max": rules["max_headline_chars"]}
 
     results["pass"] = all(v["pass"] for v in results.values() if isinstance(v, dict))
     return results

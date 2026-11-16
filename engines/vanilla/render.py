@@ -181,28 +181,89 @@ def layout_for(w: int, h: int) -> str:
     return "split" if r >= 1.3 else "story" if r <= 0.75 else "square"
 
 
+def cover(src: Image.Image, W: int, H: int, fy: float = 0.42) -> Image.Image:
+    """Fill the frame, cropping evenly left/right and keeping faces (upper part) when cropping height."""
+    s = max(W / src.width, H / src.height)
+    img = src.resize((round(src.width * s), round(src.height * s)), Image.LANCZOS)
+    x, y = (img.width - W) // 2, round((img.height - H) * fy)
+    return img.crop((x, y, x + W, y + H))
+
+
+def pill(canvas, text, x, y, size, bg, fg, right=False):
+    """A small label (disclosure, AI-generated). Returns its text so checks know what was drawn."""
+    draw = ImageDraw.Draw(canvas)
+    f = font("small", text, size)
+    w, h = draw.textlength(text, font=f) + size * 1.2, size * 1.9
+    x0 = x - w if right else x
+    draw.rounded_rectangle((x0, y, x0 + w, y + h), radius=h / 2, fill=bg)
+    draw.text((x0 + size * 0.6, y + h / 2), text, font=f, fill=fg, anchor="lm")
+    return text
+
+
 # ------------------------------------------------------------------ the ad
 def render_static(source: Image.Image, fmt: dict, brand: dict, partner: dict | None,
                   message: str, cta: str | None, disclaimers: list[str], root: Path,
-                  safe_zone: float = 0.06) -> tuple[Image.Image, dict, Image.Image]:
-    """Returns (creative, layout, logo). layout + logo let brand_check verify the pixels."""
+                  safe_zone: float = 0.06, standard: dict | None = None) -> tuple[Image.Image, dict, Image.Image | None]:
+    """Returns (creative, layout, logo). layout + logo let brand_check verify the pixels.
+    `standard` is the creative type from creative_standards.yaml; its treatment picks the finish."""
     W, H = fmt["width"], fmt["height"]
+    treatment = (standard or {}).get("treatment", {})
+    family = treatment.get("layout", "brand")
     colors = brand["assets"]["colors"]
     primary, text_rgb = hex_rgb(colors["primary"]), hex_rgb(colors["text"])
     brand_font = brand["assets"].get("font")
     kind, m = layout_for(W, H), round(min(W, H) * max(safe_zone, 0.06))
+    unit = min(W, H)
+    brand_sample, centre_in = None, None
 
-    if kind == "square":
+    # ── 1. the picture, and where the words go (x, y, w, h)
+    if family == "native":                        # UGC: the photo is the post; no brand panel
+        canvas = cover(source, W, H)
+        cap_w = round(W * (0.78 if kind == "story" else 0.62 if kind == "square" else 0.40))
+        text_box = (m + round(unit * 0.03), round(H * (0.66 if kind == "story" else 0.68)), cap_w - round(unit * 0.06), round(H * 0.16))
+        align = "left"
+    elif family == "photo":                       # influencer: photo-led, brand only at the bottom
+        # a landscape portrait cropped to a tall frame loses the product held beside the face:
+        # in that case fit the whole photo across the width instead, and let the brand area sit below
+        loses = 1 - (source.height / source.width) * (W / H)
+        band = 0.40 if kind != "split" else 0.46
+        if loses > 0.3:
+            fit_scale = (W / source.width) * source.height / H
+            canvas = place(source, W, H, cx=0.5, cy=0.13 + fit_scale / 2, scale=fit_scale)
+            band = 1 - (0.13 + fit_scale) + 0.06       # brand area starts where the photo ends (short fade)
+        else:
+            canvas = cover(source, W, H)
+        gradient(canvas, primary, (0, round(H * (1 - band)), W, H), "y", 0.0, 1.0)
+        canvas.paste(primary, (0, H - round(H * (band - 0.06 if loses > 0.3 else band * 0.64)), W, H))   # solid under the text
+        text_top = 1 - band + 0.09 if loses > 0.3 else 1 - band * 0.62
+        text_box = (m, round(H * text_top), round(W * (0.86 if kind == "story" else 0.62)), round(H * min(band * 0.36, 0.14)))
+        centre_in = (round(H * text_top), round(H * 0.80)) if loses > 0.3 else None   # headline + button, centred
+        align, brand_sample = ("center" if kind == "story" else "left"), (3, H - 3)
+        if kind == "story":
+            text_box = (m, text_box[1], W - 2 * m, text_box[3])
+    elif family == "poster":                      # the message is the hero
+        if kind == "split":
+            canvas = place(source, W, H, cx=0.78, cy=0.55, scale=0.86)
+            gradient(canvas, primary, (0, 0, round(W * 0.66), H), "x", 1.0, 0.0, solid_until=0.86)
+            text_box = (m, round(H * 0.22), round(W * 0.56) - m, round(H * 0.50))
+        else:
+            canvas = place(source, W, H, cx=0.5, cy=0.80 if kind == "story" else 0.82, scale=0.46 if kind == "story" else 0.52)
+            top = round(H * (0.52 if kind == "story" else 0.50))
+            canvas.paste(primary, (0, 0, W, top))
+            gradient(canvas, primary, (0, top, W, top + round(H * 0.10)), "y", 1.0, 0.0)
+            text_box = (m, round(H * (0.17 if kind == "story" else 0.15)), W - 2 * m, round(H * (0.24 if kind == "story" else 0.26)))
+        align, brand_sample = "left", (3, 3)
+    elif kind == "square":
         canvas = place(source, W, H, cx=0.73, cy=0.54, scale=1.12)
         # solid behind the whole text column (white on brand colour must clear 4.5:1), then fade
         gradient(canvas, primary, (0, 0, round(W * 0.70), H), "x", 1.0, 0.0, solid_until=0.68)
-        text_box = (m, round(H * 0.30), round(W * 0.46) - m, round(H * 0.42))   # x, y, w, h
+        text_box = (m, round(H * 0.30), round(W * 0.46) - m, round(H * 0.42))
         align, brand_sample = "left", (3, H // 2)
     elif kind == "story":
         canvas = place(source, W, H, cx=0.5, cy=0.57, scale=0.62)
         gradient(canvas, primary, (0, 0, W, round(H * 0.42)), "y", 1.0, 0.0, solid_until=0.80)
         gradient(canvas, primary, (0, round(H * 0.70), W, H), "y", 0.0, 1.0)
-        top = round(H * 0.13)                          # Stories UI covers ~13% at the top
+        top = round(H * 0.13)                     # Stories UI covers ~13% at the top
         text_box = (m, top + round(H * 0.06), W - 2 * m, round(H * 0.15))
         align, brand_sample = "center", (W - 3, 3)
     else:  # split
@@ -210,42 +271,68 @@ def render_static(source: Image.Image, fmt: dict, brand: dict, partner: dict | N
         canvas = place(source, W, H, cx=0.71, cy=0.52, scale=1.0)
         gradient(canvas, primary, (0, 0, panel + round(W * 0.10), H), "x", 1.0, 0.0, solid_until=panel / (panel + W * 0.10))
         text_box = (m, round(H * 0.30), panel - 2 * m, round(H * 0.36))
-        align, brand_sample = "left", (3, H - 3)
+        align = "left"
+        brand_sample = (3, H - 3)
 
     canvas = canvas.convert("RGBA")
     draw = ImageDraw.Draw(canvas)
+    top_y = round(H * 0.13) - round(unit * 0.06) - round(H * 0.015) if kind == "story" else m
 
-    # logo (+ partner lockup "×  partner") — top left; on a story, below the Stories header
-    logo_h = round(min(W, H) * (0.075 if kind != "story" else 0.06))
-    ly = round(H * 0.13) - logo_h - round(H * 0.015) if kind == "story" else m
-    logo_box, logo_img = paste_logo(canvas, root / brand["assets"]["logo"], logo_h, m, ly)
-    partner_box = None
-    if partner and partner.get("assets", {}).get("logo"):
-        xf = font("small", "×", round(logo_h * 0.55))
-        xx = m + logo_box[2] + round(logo_h * 0.35)
-        draw.text((xx, ly + logo_h / 2), "×", font=xf, fill=text_rgb, anchor="lm")
-        partner_box, _ = paste_logo(canvas, root / partner["assets"]["logo"], round(logo_h * 0.72),
-                                    xx + round(logo_h * 0.55), ly + round(logo_h * 0.14))
+    # ── 2. logo (+ "× partner"), except on an organic post
+    logo_box = logo_img = partner_box = None
+    logo_h = round(unit * (0.075 if kind != "story" else 0.06))
+    if family != "native":
+        logo_box, logo_img = paste_logo(canvas, root / brand["assets"]["logo"], logo_h, m, top_y)
+        if partner and partner.get("assets", {}).get("logo"):
+            xf = font("small", "×", round(logo_h * 0.55))
+            xx = m + logo_box[2] + round(logo_h * 0.35)
+            draw.text((xx, top_y + logo_h / 2), "×", font=xf, fill=(255, 255, 255) if family == "photo" else text_rgb, anchor="lm")
+            partner_box, _ = paste_logo(canvas, root / partner["assets"]["logo"], round(logo_h * 0.72),
+                                        xx + round(logo_h * 0.55), top_y + round(logo_h * 0.14))
 
-    # headline
+    # ── 3. labels the standard requires: disclosure, and AI-generated for a generated person
+    label = synthetic = None
+    lsize = max(13, round(unit * 0.024))
+    if treatment.get("label"):
+        ly = top_y if family == "native" else top_y + logo_h + round(unit * 0.02)
+        label = pill(canvas, treatment["label"], m, ly, lsize, (17, 17, 17), (255, 255, 255))
+    if (standard or {}).get("rules", {}).get("people"):
+        synthetic = pill(canvas, "AI-generated", W - m, top_y, lsize, (255, 255, 255), (17, 17, 17), right=True)
+
+    # ── 4. headline (a caption sticker on a native post)
     x, y, bw, bh = text_box
-    start = round(min(W, H) * (0.115 if kind == "square" else 0.10 if kind == "split" else 0.105))
-    f, lines, size, lh = fit(draw, message, "headline", bw, bh, start, round(min(W, H) * 0.045), brand_font)
+    if family == "native":
+        start, minimum, role, colour = round(unit * 0.052), round(unit * 0.03), "button", (17, 17, 17)
+    elif family == "poster":
+        start, minimum, role, colour = round(unit * 0.16), round(unit * 0.06), "headline", text_rgb
+    else:
+        start = round(unit * (0.115 if kind == "square" else 0.10 if kind == "split" else 0.105))
+        if family == "photo":
+            start = round(unit * 0.085)
+        minimum, role, colour = round(unit * 0.045), "headline", text_rgb
+    f, lines, size, lh = fit(draw, message, role, bw, bh, start, minimum, brand_font)
     block_h = len(lines) * lh
-    if kind == "story":
+    bsize = max(16, round(unit * (0.046 if kind == "story" else 0.034)))
+    if kind == "story" and family == "brand":
         y = y + (bh - block_h) // 2
-    text_bg = mean_colour(canvas, (x, y, x + bw, y + block_h))       # the real pixels behind the words
-    end = draw_lines(draw, lines, f, lh, x, y, text_rgb, align, bw)
+    elif centre_in:                               # centre headline + button in the space below the photo
+        group = block_h + (round(size * 0.55) + bsize * 2.3 if cta and treatment.get("cta", True) else 0)
+        y = centre_in[0] + max(0, (centre_in[1] - centre_in[0] - group) // 2)
+    if family == "native":                        # white caption card behind the words
+        pad = round(size * 0.55)
+        card_w = max(draw.textlength(l, font=f) for l in lines) + 2 * pad
+        draw.rounded_rectangle((x - pad, y - pad, x - pad + card_w, y + block_h + pad * 0.6), radius=round(size * 0.45), fill=(255, 255, 255))
+    text_bg = mean_colour(canvas, (x, y, x + bw if family != "native" else x + 4, y + block_h))
+    end = draw_lines(draw, lines, f, lh, x, y, colour, align, bw)
 
-    # button
-    bsize = max(16, round(min(W, H) * (0.046 if kind == "story" else 0.034)))
-    if cta:
-        by = round(H * 0.80) if kind == "story" else end + round(size * 0.55)   # story: above the reply bar
+    # ── 5. button
+    if cta and treatment.get("cta", True):
+        by = round(H * 0.80) if (kind == "story" and family == "brand") else end + round(size * 0.55)
         button(draw, cta, x, by, bsize, text_rgb, primary, align, bw)
 
-    # disclaimers, small, at the bottom of the text side
-    if disclaimers:
-        dsize = max(13, round(min(W, H) * 0.02))
+    # ── 6. disclaimers, small, at the bottom of the text side
+    if disclaimers and family != "native":
+        dsize = max(13, round(unit * 0.02))
         dy = H - m - dsize * 1.3 * len(disclaimers)
         for d in disclaimers:
             df = font("small", d, dsize)
@@ -254,8 +341,9 @@ def render_static(source: Image.Image, fmt: dict, brand: dict, partner: dict | N
             dy += dsize * 1.3
 
     layout = {
-        "kind": kind, "size": (W, H), "logo_box": logo_box, "partner_box": partner_box,
-        "band_color": primary, "brand_sample": brand_sample, "text_color": text_rgb, "text_bg": text_bg,
-        "headline_font_size": size, "headline_lines": len(lines), "min_headline": round(min(W, H) * 0.045),
+        "kind": kind, "family": family, "size": (W, H), "logo_box": logo_box, "partner_box": partner_box,
+        "band_color": primary, "brand_sample": brand_sample, "text_color": colour, "text_bg": text_bg,
+        "headline_font_size": size, "headline_lines": len(lines), "min_headline": minimum,
+        "label": label, "synthetic_label": synthetic,
     }
     return canvas.convert("RGB"), layout, logo_img

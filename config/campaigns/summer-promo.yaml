@@ -15,4 +15,5 @@ products:
     name: Acme Daily Sunscreen
     description: a yellow sunscreen tube with a white cap on a beach towel
 markets: [us, mx]
+creative_types: [product, poster]   # from creative_standards.yaml
 channels: [social, newsletter]

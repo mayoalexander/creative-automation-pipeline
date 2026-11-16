@@ -17,7 +17,7 @@ def build_report(engine: str, cfg, campaign: dict, plans, sources: dict, items: 
     by_market = {}
     for p in plans:
         mi = [i for i in items if i["market"] == p.ctx.id]
-        src = Counter(s["kind"] for (m, _), s in sources.items() if m == p.ctx.id)
+        src = Counter(s["kind"] for (m, *_), s in sources.items() if m == p.ctx.id)
         by_market[p.ctx.id] = {
             "locale": p.ctx.locale,
             "message": p.message,

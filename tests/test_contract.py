@@ -85,7 +85,8 @@ def test_iris_dry_run_matches_contract_and_touches_nothing(tmp_path, monkeypatch
     assert sum("atlas add-item" in c for c in cmds) == 4               # one approval card per market
     # approvers per market: us/mx/de = global + regional + SportCo partner; jp = global + 2 JP roles (SportCo off)
     assert sum("atlas task-add" in c for c in cmds) == 3 + 3 + 3 + 3
-    assert report["iris"]["records"] == 72                             # every built + planned item
+    totals = report["totals"]
+    assert report["iris"]["records"] == totals["built"] + sum(totals["planned"].values())   # every built + planned item
 
 
 def test_iris_skips_approval_card_for_legally_blocked_market(tmp_path):

@@ -42,7 +42,7 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
 
     selected = markets or campaign["markets"]
     plans = resolve_phase(cfg, campaign, selected, translator)
-    sources = {} if plan_only else source_phase(cfg.root, campaign, plans, image_provider)
+    sources = {} if plan_only else source_phase(cfg, campaign, plans, image_provider)
     items = render_phase(cfg, campaign, plans, sources, out) if not plan_only else []
     write_market_files(plans, out)
     report = build_report(engine, cfg, campaign, plans, sources, items, time.time() - t0, image_provider.name)

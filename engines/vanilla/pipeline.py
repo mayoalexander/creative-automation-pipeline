@@ -75,16 +75,21 @@ def resolve_phase(cfg: Config, campaign: dict, markets: list[str], translator) -
 
 
 # ---------------------------------------------------------------- phase 2
-def build_prompt(product: dict, ctx: MarketContext) -> str:
+def build_prompt(product: dict, ctx: MarketContext, standards: dict, creative: str = "product") -> str:
+    """The creative type's shot recipe, filled in for this product and market."""
     aud = ctx.market.get("audience", {})
-    tone = ctx.brand.get("marketing", {}).get("tone", "")
-    return (
-        f"Professional advertising product photo of {product['name']}: {product.get('description', '')}. "
-        f"Single product, centered, fully in frame with generous empty space around it, clean studio lighting, "
-        f"soft background in {ctx.brand['assets']['colors']['accent']} tones. Mood: {tone}. "
-        f"Styled to appeal to {aud.get('age', '')} {', '.join(aud.get('traits', []))} in {ctx.market['name']}. "
-        f"No text, no logos, no watermarks."
-    )
+    values = {
+        "product.name": product["name"], "product.description": product.get("description", ""),
+        "audience.age": aud.get("age", ""), "audience.traits": ", ".join(aud.get("traits", [])),
+        "market.name": ctx.market["name"], "brand.tone": ctx.brand.get("marketing", {}).get("tone", ""),
+        "brand.accent": ctx.brand["assets"]["colors"]["accent"],
+    }
+    shot = standards["types"][creative]["shot"]
+    parts = [shot[k] for k in ("subject", "setting", "camera", "composition") if k in shot]
+    text = " ".join(part.rstrip(".") + "." for part in parts)
+    for k, v in values.items():
+        text = text.replace("{" + k + "}", str(v))
+    return f"{text} Mood: {values['brand.tone']}. {standards.get('global', {}).get('forbidden_in_image', '')}".strip()
 
 
 def find_asset(root: Path, product_id: str, market_id: str) -> tuple[Path | None, str]:
@@ -99,33 +104,54 @@ def find_asset(root: Path, product_id: str, market_id: str) -> tuple[Path | None
     return None, "missing"
 
 
-def source_one(root: Path, product: dict, ctx: MarketContext, provider) -> dict:
-    path, kind = find_asset(root, product["id"], ctx.id)
-    if path:
-        return {"path": path, "kind": kind}
-    prompt = build_prompt(product, ctx)
+def source_one(root: Path, product: dict, ctx: MarketContext, provider, standards: dict,
+               creative: str = "product") -> dict:
+    """Reuse or generate the image for one (market, product, creative type)."""
+    if standards["types"][creative].get("source", "reuse_or_generate") == "reuse_or_generate":
+        path, kind = find_asset(root, product["id"], ctx.id)
+        if path:
+            return {"path": path, "kind": kind}
+    prompt = build_prompt(product, ctx, standards, creative)
     key = hashlib.sha1(f"{provider.name}|{prompt}".encode()).hexdigest()[:10]
-    cached = root / f"assets/generated/{product['id']}/{ctx.id}-{key}.png"
+    cached = root / f"assets/generated/{product['id']}/{creative}/{ctx.id}-{key}.png"
     if cached.exists():  # generated on an earlier run -> reuse, no API cost
         return {"path": cached, "kind": "reused_generated", "prompt": prompt}
     t0 = time.time()
     img = provider.generate(prompt, product)
     cached.parent.mkdir(parents=True, exist_ok=True)
     img.save(cached)
-    log.info("[%s] generated %s in %.1fs (%s)", ctx.id, product["id"], time.time() - t0, provider.name)
+    log.info("[%s] generated %s/%s in %.1fs (%s)", ctx.id, product["id"], creative, time.time() - t0, provider.name)
     return {"path": cached, "kind": "generated", "prompt": prompt, "seconds": round(time.time() - t0, 1)}
 
 
-def source_phase(root: Path, campaign: dict, plans: list[MarketPlan], provider, workers: int = 4) -> dict:
-    jobs = {(p.ctx.id, prod["id"]): (prod, p.ctx) for p in plans if not p.blocked for prod in campaign["products"]}
+def source_key(standards: dict, creative: str) -> str:
+    """Which creative type's image this one uses ('poster' borrows the product shot's)."""
+    src = standards["types"][creative].get("source", "reuse_or_generate")
+    return src if src in standards["types"] else creative
+
+
+def provider_for(provider, cfg: Config, creative: str):
+    """The type's preferred models, then the org default, then the org's fallbacks (deduplicated)."""
+    genai = cfg.org.get("creative_resources", {}).get("genai", {})
+    preferred = cfg.standards["types"][creative].get("models", [])
+    fallbacks = genai.get("openrouter_fallback_models", [])
+    return provider.for_models(preferred, fallbacks) if preferred or fallbacks else provider
+
+
+def source_phase(cfg: Config, campaign: dict, plans: list[MarketPlan], provider, workers: int = 4) -> dict:
+    """Keyed by (market, product, creative type whose image it is). Runs in parallel."""
+    kinds = {source_key(cfg.standards, c) for c in cfg.creative_types(campaign)}
+    jobs = {(p.ctx.id, prod["id"], c): (prod, p.ctx, c) for p in plans if not p.blocked
+            for prod in campaign["products"] for c in kinds}
     sources = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {k: pool.submit(source_one, root, prod, ctx, provider) for k, (prod, ctx) in jobs.items()}
+        futures = {k: pool.submit(source_one, cfg.root, prod, ctx, provider_for(provider, cfg, c), cfg.standards, c)
+                   for k, (prod, ctx, c) in jobs.items()}
         for k, fut in futures.items():
             try:
                 sources[k] = fut.result()
             except Exception as e:  # one failed generation shouldn't sink the campaign
-                log.error("[%s] could not source %s: %s", k[0], k[1], e)
+                log.error("[%s] could not source %s/%s: %s", *k, e)
                 sources[k] = {"path": None, "kind": "error", "error": str(e)}
     return sources
 
@@ -133,31 +159,36 @@ def source_phase(root: Path, campaign: dict, plans: list[MarketPlan], provider, 
 # ---------------------------------------------------------------- phase 3
 @dataclass(frozen=True)
 class Deliverable:
-    """One file the campaign needs: market × product × channel × format × asset type."""
+    """One file the campaign needs: market × product × creative type × channel × format × asset type."""
     market: str
     product: str
     channel: str
     format: dict
     asset_type: str
     safe_zone: float = 0.06
+    creative: str = "product"
+    standard: dict = field(default_factory=dict, compare=False, hash=False)   # the type's treatment + rules
+    source: str = "product"                                                    # whose image it uses
 
     @property
     def path(self) -> Path:
-        return Path(self.market) / self.product / self.channel / self.asset_type / f"{self.format['id']}.png"
+        return Path(self.market) / self.product / self.channel / self.creative / self.asset_type / f"{self.format['id']}.png"
 
     def record(self, **extra) -> dict:
-        return {"market": self.market, "product": self.product, "channel": self.channel,
+        return {"market": self.market, "product": self.product, "creative": self.creative, "channel": self.channel,
                 "format": self.format["id"], "asset_type": self.asset_type, "path": str(self.path), **extra}
 
 
 def deliverables(cfg: Config, campaign: dict, market: str, product: dict) -> Iterator[Deliverable]:
-    """Everything one product needs in one market, driven by the channel registry."""
-    for ch_id in campaign.get("channels", ["social"]):
-        channel = cfg.channels[ch_id]
-        for fmt in channel["formats"]:
-            for asset_type in channel["asset_types"]:
-                yield Deliverable(market, product["id"], ch_id, fmt, asset_type,
-                                  channel.get("text", {}).get("safe_zone", 0.06))
+    """Everything one product needs in one market: creative types × the channel registry."""
+    for creative in cfg.creative_types(campaign):
+        for ch_id in campaign.get("channels", ["social"]):
+            channel = cfg.channels[ch_id]
+            for fmt in channel["formats"]:
+                for asset_type in channel["asset_types"]:
+                    yield Deliverable(market, product["id"], ch_id, fmt, asset_type,
+                                      channel.get("text", {}).get("safe_zone", 0.06), creative,
+                                      cfg.standards["types"][creative], source_key(cfg.standards, creative))
 
 
 @lru_cache(maxsize=32)
@@ -168,7 +199,7 @@ def _open(path: str) -> Image.Image:
 
 def generate_static(d: Deliverable, image: Image.Image, plan: MarketPlan, root: Path):
     return render_static(image, d.format, plan.ctx.brand, plan.ctx.partner, plan.message, plan.cta,
-                         plan.ctx.disclaimers(), root, d.safe_zone)
+                         plan.ctx.disclaimers(), root, d.safe_zone, d.standard)
 
 
 # asset type -> generator. Anything a channel asks for that isn't here is "planned".
@@ -188,14 +219,14 @@ def produce(d: Deliverable, plan: MarketPlan, source: dict, root: Path, out: Pat
     creative, layout, logo = GENERATORS[d.asset_type](d, image, plan, root)
     (out / d.path).parent.mkdir(parents=True, exist_ok=True)
     creative.save(out / d.path)
-    checks = brand_check(creative, layout, logo)
+    checks = brand_check(creative, layout, logo, d.standard.get("rules", {}), plan.message)
     if not checks["pass"]:
         log.warning("[%s] brand check failed: %s", d.path, checks)
     return d.record(status="built", source=source["kind"], brand_checks=checks)
 
 
 def render_phase(cfg: Config, campaign: dict, plans: list[MarketPlan], sources: dict, out: Path) -> list[dict]:
-    return [produce(d, plan, sources.get((plan.ctx.id, prod["id"]), {}), cfg.root, out)
+    return [produce(d, plan, sources.get((plan.ctx.id, prod["id"], d.source), {}), cfg.root, out)
             for plan in plans
             for prod in campaign["products"]
             for d in deliverables(cfg, campaign, plan.ctx.id, prod)]

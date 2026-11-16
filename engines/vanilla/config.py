@@ -47,10 +47,19 @@ class Config:
     markets: dict[str, dict]
     channels: dict[str, dict]
     campaigns: dict[str, dict]
+    standards: dict = field(default_factory=dict)   # creative_standards.yaml
+
+    def creative_types(self, campaign: dict) -> list[str]:
+        types = campaign.get("creative_types", ["product"])
+        unknown = [t for t in types if t not in self.standards.get("types", {})]
+        if unknown:
+            raise KeyError(f"campaign {campaign['id']}: unknown creative types {unknown}")
+        return types
 
 
 def load_config(config_dir: str | Path) -> Config:
     config_dir = Path(config_dir).resolve()
+    std = config_dir / "creative_standards.yaml"
     return Config(
         root=config_dir.parent,
         org=yaml.safe_load((config_dir / "org.yaml").read_text()),
@@ -59,6 +68,7 @@ def load_config(config_dir: str | Path) -> Config:
         markets=_load_dir(config_dir / "markets"),
         channels=_load_dir(config_dir / "channels"),
         campaigns=_load_dir(config_dir / "campaigns"),
+        standards=yaml.safe_load(std.read_text()) if std.exists() else {"types": {"product": {"source": "reuse_or_generate"}}},
     )
 
 

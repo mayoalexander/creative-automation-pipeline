@@ -22,8 +22,8 @@ creative_resources:
   genai:
     image_provider: openrouter      # openrouter | openai | mock
     openrouter_image_model: google/gemini-2.5-flash-image   # any OpenRouter image model
-    openrouter_image_only: false    # true for image-only models (FLUX, Seedream, gpt-image-*)
     openrouter_text_model: google/gemini-2.5-flash          # translation
+    openrouter_fallback_models: [black-forest-labs/flux.2-pro]   # tried when a model refuses or fails
     image_model: gpt-image-1        # used by the openai provider
     image_cost_usd: 0.04            # per generated image, for the cost estimate
     text_model: gpt-4o-mini         # translation, openai provider

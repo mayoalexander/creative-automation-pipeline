@@ -47,7 +47,7 @@ python -m engines.vanilla run --campaign spring-launch                       # i
 python -m engines.vanilla run --campaign spring-launch --provider openai     # gpt-image-1 direct
 python -m engines.vanilla run --campaign spring-launch --env-file ~/.my/env  # keys from another file
 
-python -m pytest -q                            # 18 tests, all engines
+python -m pytest -q                            # all engines
 ```
 
 Other useful commands:
@@ -231,6 +231,25 @@ It runs **dry by default**: it prints the exact `iris …` commands to `iris_com
 Verified against a live workspace: 4 approval cards × 3 approver tasks, 72 dataset records (18 per market), 12 preview images; ticking Japan's three tasks and running `sync-approvals` moved JP to `approved` in both `approvals.json` and the dataset.
 
 ---
+
+## Creative standards
+
+`config/creative_standards.yaml` (owned by Brand) defines the kinds of creative a campaign can ask for:
+`creative_types: [product, influencer, ugc, poster]`. Each type has a **shot** recipe (subject, setting, camera,
+composition, filled in per product and market), a **treatment** (how it is finished), **rules** (what it must
+carry) and optionally preferred **models**.
+
+| Type | Image | Finish | Must carry |
+|---|---|---|---|
+| `product` | studio product shot; supplied photos win | brand panel, headline, button | — |
+| `influencer` | a creator cast from the market's audience, holding the product | photo-led, brand at the bottom | "Paid partnership" + "AI-generated" |
+| `ugc` | candid phone photo at home | native caption, no brand panel, no logo | "#ad" + "AI-generated", ≤ 40 characters |
+| `poster` | reuses the product image (no extra generation) | the message is the hero | ≤ 32 characters |
+
+Disclosure, the AI-person label and headline length are **brand checks**, so a missing "#ad" fails the build.
+Models are a chain per type (preferred → org default → fallbacks): Gemini's safety filter refused a photo of a
+person in testing, so people shots go to FLUX first and a refusal falls through with the reason kept. The cache key
+is the prompt plus the first-choice model, so adding a fallback never throws away paid-for images.
 
 ## Teams and access control
 

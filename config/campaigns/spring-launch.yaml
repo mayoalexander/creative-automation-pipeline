@@ -17,4 +17,5 @@ products:
     name: Acme Fresh Body Lotion
     description: a white pump bottle of body lotion with teal label, aloe leaves
 markets: [us, mx, jp, de]
+creative_types: [product, influencer, ugc, poster]   # from creative_standards.yaml
 channels: [social]

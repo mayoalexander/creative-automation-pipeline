@@ -30,8 +30,8 @@ from langgraph.types import RetryPolicy, Send, interrupt
 
 from engines.vanilla.checks import legal_check
 from engines.vanilla.config import load_config, resolve_market
-from engines.vanilla.pipeline import (MarketPlan, deliverables, localize, produce, source_one,
-                                     write_market_files)
+from engines.vanilla.pipeline import (MarketPlan, deliverables, localize, produce, provider_for, source_key,
+                                     source_one, write_market_files)
 from engines.vanilla.providers import build_providers
 from engines.vanilla.report import build_report, write_outputs
 
@@ -95,9 +95,11 @@ def resolve(state: State) -> dict:
 
 
 def fan_out_sources(state: State):
-    campaign = _cfg(state["config_dir"]).campaigns[state["campaign_id"]]
-    sends = [Send("source_asset", {**state, "market": p["market"], "product": prod})
-             for p in state["plans"] if not p["legal_findings"] for prod in campaign["products"]]
+    cfg = _cfg(state["config_dir"])
+    campaign = cfg.campaigns[state["campaign_id"]]
+    kinds = sorted({source_key(cfg.standards, c) for c in cfg.creative_types(campaign)})
+    sends = [Send("source_asset", {**state, "market": p["market"], "product": prod, "creative": c})
+             for p in state["plans"] if not p["legal_findings"] for prod in campaign["products"] for c in kinds]
     return sends or "plan_render"
 
 
@@ -105,9 +107,10 @@ def source_asset(task: dict) -> dict:
     cfg = _cfg(task["config_dir"])
     ctx = resolve_market(cfg, cfg.campaigns[task["campaign_id"]], task["market"])
     image_provider, _ = _providers(task["provider"], task["config_dir"])
-    src = source_one(cfg.root, task["product"], ctx, image_provider)
+    c = task["creative"]
+    src = source_one(cfg.root, task["product"], ctx, provider_for(image_provider, cfg, c), cfg.standards, c)
     return {"sources": [{**src, "path": str(src["path"]), "market": task["market"],
-                         "product": task["product"]["id"]}]}
+                         "product": task["product"]["id"], "creative": c}]}
 
 
 def plan_render(state: State) -> dict:
@@ -127,9 +130,9 @@ def render_creatives(task: dict) -> dict:
     p, prod = task["plan"], task["product"]
     plan = MarketPlan(resolve_market(cfg, campaign, p["market"]), p["message"], p["message_source"],
                       p["cta"], p["legal_findings"])
-    source = next((s for s in task.get("sources", [])
-                   if s["market"] == p["market"] and s["product"] == prod["id"]), {})
-    return {"items": [produce(d, plan, source, cfg.root, _out(task))
+    mine = {s["creative"]: s for s in task.get("sources", [])
+            if s["market"] == p["market"] and s["product"] == prod["id"]}
+    return {"items": [produce(d, plan, mine.get(d.source, {}), cfg.root, _out(task))
                       for d in deliverables(cfg, campaign, p["market"], prod)]}
 
 
@@ -158,7 +161,7 @@ def report(state: State) -> dict:
     campaign = cfg.campaigns[state["campaign_id"]]
     plans = [MarketPlan(resolve_market(cfg, campaign, p["market"]), p["message"], p["message_source"],
                         p["cta"], p["legal_findings"]) for p in state["plans"]]
-    sources = {(s["market"], s["product"]): s for s in state.get("sources", [])}
+    sources = {(s["market"], s["product"], s["creative"]): s for s in state.get("sources", [])}
     out = _out(state)
     write_market_files(plans, out)
     for a in state.get("approvals", []):                 # record the human decisions

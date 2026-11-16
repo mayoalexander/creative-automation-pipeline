@@ -1,0 +1,59 @@
+# Creative standards: the kinds of creative a campaign can ask for, and the rules each follows.
+# Owned by the Brand team (teams.yaml). A campaign picks types:
+#     creative_types: [product, influencer, ugc, poster]
+# Each type says how its image is MADE (shot), how it is FINISHED (treatment), and what it
+# must CARRY (rules). Placeholders: {product.*}, {audience.*}, {market.name}, {brand.tone},
+# {brand.accent}.
+
+global:
+  forbidden_in_image: "No text, no letters, no logos and no watermarks anywhere in the image."
+  people:                                   # every type that shows a person
+    adults_only: true
+    cast_from_audience: true                # cast from the market's audience, not one default face
+    synthetic_label: AI-generated           # a generated person is labelled as such, always
+
+types:
+  product:
+    name: Product shot
+    purpose: Hero the product itself. The default for every channel.
+    source: reuse_or_generate               # supplied photos win; generate only what is missing
+    shot:
+      subject: "{product.name}: {product.description}"
+      setting: "studio, seamless background in {brand.accent} tones, a few natural props (no people, no hands)"
+      camera: "commercial product photography, 85 mm lens, soft diffused key light, contact shadow"
+      composition: "product centred, about 45% of the frame height, clean negative space around it"
+    treatment: { layout: brand, headline: true, cta: true }
+    rules: {}
+
+  influencer:
+    name: Influencer · studio
+    purpose: A creator presenting the product. Trust from a face, polish from a studio.
+    source: generate                        # a real campaign uses the creator's own shoot
+    models: [black-forest-labs/flux.2-pro]  # Gemini's filter refuses some photos of people
+    shot:
+      subject: "a {audience.age} creator, {audience.traits}, holding {product.name} ({product.description}) toward the camera with a natural smile"
+      setting: "bright content-creator studio in {market.name}, ring-light catchlights, soft backdrop in {brand.accent} tones"
+      camera: "editorial portrait photography, 50 mm lens, shallow depth of field, eye level"
+      composition: "product held up beside the face; person and product both inside the centre third of the frame, so any crop keeps them"
+    treatment: { layout: photo, headline: true, cta: true, label: Paid partnership }
+    rules: { disclosure: Paid partnership, people: 1 }
+
+  ugc:
+    name: UGC · organic
+    purpose: Looks like a real customer's post. Native to the feed, not an ad.
+    source: generate                        # a real campaign uses licensed customer content
+    models: [black-forest-labs/flux.2-pro]
+    shot:
+      subject: "a {audience.age} person, {audience.traits}, casually using {product.name} ({product.description}) at home"
+      setting: "a real home in {market.name}: bathroom shelf or bedroom, everyday objects, window daylight"
+      camera: "candid smartphone photo, slight grain, imperfect framing, no studio lighting, no retouching"
+      composition: "product visible but not posed, person partly in frame"
+    treatment: { layout: native, headline: caption, cta: false, label: "#ad" }
+    rules: { disclosure: "#ad", people: 1, max_headline_chars: 40 }
+
+  poster:
+    name: Commercial poster
+    purpose: The message is the hero. Out-of-home, banners, announcements.
+    source: product                         # reuses the product shot's image: no extra generation
+    treatment: { layout: poster, headline: hero, cta: true }
+    rules: { max_headline_chars: 32 }
