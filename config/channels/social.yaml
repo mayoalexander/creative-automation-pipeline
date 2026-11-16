@@ -1,8 +1,8 @@
 id: social
 name: Social media
 formats:
-  - { id: 1x1,  width: 1080, height: 1080, label: Instagram feed }
-  - { id: 9x16, width: 1080, height: 1920, label: Stories / Reels }
-  - { id: 16x9, width: 1920, height: 1080, label: Facebook / YouTube }
+  - {id: 1x1, width: 1080, height: 1080, label: Instagram feed}
+  - {id: 9x16, width: 1080, height: 1920, label: Stories / Reels}
+  - {id: 16x9, width: 1920, height: 1080, label: Facebook / YouTube}
 asset_types: [static, video, gif]
-text: { max_chars: 60, safe_zone: 0.06 }
+text: {max_chars: 60, safe_zone: 0.06}

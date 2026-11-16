@@ -7,6 +7,6 @@ audience:
   traits: [eco-conscious, quality-first]
 overrides:
   acme:
-    marketing: { cta: Jetzt kaufen }
-    compliance: { disclaimers: ["Nur solange der Vorrat reicht."] }
-affiliate_program: { enabled: false }
+    marketing: {cta: Jetzt kaufen}
+    compliance: {disclaimers: ["Nur solange der Vorrat reicht."]}
+affiliate_program: {enabled: false}

@@ -14,9 +14,9 @@ velocity:
     target: 300
 
 creative_resources:
-  in_house: { designers: 6, hours_per_week: 240 }
+  in_house: {designers: 6, hours_per_week: 240}
   agencies:
-    - { name: AgencyX, markets: [mx, us] }
+    - {name: AgencyX, markets: [mx, us]}
   # Baseline used for the "time saved" metric: how long one creative takes by hand.
   manual_minutes_per_creative: 45
   genai:

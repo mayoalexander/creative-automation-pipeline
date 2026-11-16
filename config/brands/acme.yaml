@@ -7,7 +7,7 @@ assets:
     primary: "#0B3D91"
     accent: "#FFC845"
     text: "#FFFFFF"
-  font: null                        # null => engine default (Arial Unicode)
+  font:                             # null => engine default (Arial Unicode)
 marketing:
   tone: confident, warm
   cta: Shop now

@@ -1,7 +1,7 @@
 id: sponsorship
 name: Sponsorship placements
 formats:
-  - { id: banner,  width: 3000, height: 600,  label: venue banner }
-  - { id: ledwall, width: 3840, height: 1080, label: LED wall }
+  - {id: banner, width: 3000, height: 600, label: venue banner}
+  - {id: ledwall, width: 3840, height: 1080, label: LED wall}
 asset_types: [static, vector, video]
-text: { max_chars: 30, safe_zone: 0.08 }
+text: {max_chars: 30, safe_zone: 0.08}

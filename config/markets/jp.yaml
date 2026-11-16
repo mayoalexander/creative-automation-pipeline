@@ -7,14 +7,14 @@ audience:
   traits: [urban, mobile-first, skincare-savvy]
 overrides:
   acme:
-    assets: { logo: assets/markets/jp/logo.png }      # local katakana lockup
-    marketing: { cta: 今すぐ購入 }
-    legal: { banned_words: [治る, 完治, 絶対] }        # pharma-claims terms
-    compliance: { disclaimers: ["※個人の感想です"] }
+    assets: {logo: assets/markets/jp/logo.png}        # local katakana lockup
+    marketing: {cta: 今すぐ購入}
+    legal: {banned_words: [治る, 完治, 絶対]}          # pharma-claims terms
+    compliance: {disclaimers: ["※個人の感想です"]}
   acme-fresh:
-    marketing: { tone: "soft, seasonal (sakura)" }
+    marketing: {tone: "soft, seasonal (sakura)"}
   sportco:
     active: false                                      # partnership not active in JP
 influencers:
-  - { handle: "@example_tokyoskin", tier: micro, fit: [skincare, beauty], role: affiliate, status: prospect }
-affiliate_program: { enabled: true, default_commission: 0.08, tracking: utm }
+  - {handle: "@example_tokyoskin", tier: micro, fit: [skincare, beauty], role: affiliate, status: prospect}
+affiliate_program: {enabled: true, default_commission: 0.08, tracking: utm}

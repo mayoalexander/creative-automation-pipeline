@@ -95,6 +95,15 @@ class Access:
                 if g.team != "*" and self._grant_covers(g, action, path, section)}
 
 
+def round_trip_yaml():
+    """The YAML writer for edits: keeps comments, quotes and layout (config files are written in its style)."""
+    from ruamel.yaml import YAML
+    rt = YAML()
+    rt.preserve_quotes, rt.width = True, 4096
+    rt.indent(mapping=2, sequence=4, offset=2)
+    return rt
+
+
 class ConfigStore:
     """Create / read / update / delete config files, every call checked and audited."""
 
@@ -136,13 +145,27 @@ class ConfigStore:
         return sections
 
     def set(self, user: str, path: str, section: str, value: Any) -> list[str]:
-        data = yaml.safe_load((self.root / path).read_text()) or {}
-        node = data
+        """Change one value, keeping the file's comments and layout, so the git diff is one line."""
+        from ruamel.yaml.comments import CommentedSeq
+        rt, f = round_trip_yaml(), self.root / path
+        doc = rt.load(f.read_text()) or {}
+        node = doc
         *parents, leaf = section.split(".")
         for k in parents:
             node = node.setdefault(k, {})
+        old = node.get(leaf) if hasattr(node, "get") else None
+        if isinstance(value, list) and getattr(getattr(old, "fa", None), "flow_style", lambda: False)():
+            value = CommentedSeq(value)                 # a [a, b] list stays on one line
+            value.fa.set_flow_style()
         node[leaf] = value
-        return self.update(user, path, data)
+        sections = changed_sections(yaml.safe_load(f.read_text()) or {}, json.loads(json.dumps(doc)))
+        for s in sections:
+            self._check(user, "update", path, s)
+        if sections:
+            with f.open("w") as out:
+                rt.dump(doc, out)
+            self._log(user, "update", path, sections)
+        return sections
 
     def delete(self, user: str, path: str) -> None:
         self._check(user, "delete", path)

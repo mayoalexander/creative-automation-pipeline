@@ -1,8 +1,8 @@
 id: print
 name: Physical / print / out-of-home
 formats:
-  - { id: a4,        width: 2480, height: 3508, label: A4 @300dpi }
-  - { id: poster,    width: 5400, height: 7200, label: 18x24in poster }
-  - { id: billboard, width: 4800, height: 1400, label: OOH billboard }
+  - {id: a4, width: 2480, height: 3508, label: A4 @300dpi}
+  - {id: poster, width: 5400, height: 7200, label: 18x24in poster}
+  - {id: billboard, width: 4800, height: 1400, label: OOH billboard}
 asset_types: [static, vector]
-text: { max_chars: 40, safe_zone: 0.08 }
+text: {max_chars: 40, safe_zone: 0.08}

@@ -280,6 +280,27 @@ python -m engines.vanilla access markets/jp.yaml --section overrides.acme.market
        --as yuki@example.com --set "今すぐチェック"                                          # checked, audited edit
 ```
 
+### Editing in the browser: the Studio
+
+```bash
+python -m engines.vanilla studio          # http://localhost:8765
+```
+
+The same dashboard as the hosted page, built from the live config and the last run, with editing:
+
+- Pick who you are acting as (a member from `teams.yaml`). Fields you may change get a pencil; locked
+  sections show the team that owns them. The server checks every save again with `access.py`.
+- A save changes **one line** of the YAML file and keeps its comments, so the git diff is reviewable. It is
+  written to `audit.jsonl` and shown under *Teams & access → Recent changes*.
+- A save that would break the config (say, a campaign naming a market that doesn't exist) is undone and
+  the reason is shown.
+- **Re-run** re-renders the campaign so you can see the change on the ads. Text edits reuse cached photos ($0).
+
+![Editing the Japan market as Regional · APAC](docs/examples/studio-edit.png)
+
+Standard library HTTP on `127.0.0.1` only: it is a local tool with no login. "Acting as" is a picker, not
+authentication; a hosted version would take the user from SSO and keep the same checks.
+
 ## Stress test
 
 `python scripts/stress.py --scales 4x2,10x4,25x6 --engine vanilla|langgraph` builds a synthetic enterprise from

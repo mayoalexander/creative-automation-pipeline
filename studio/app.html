@@ -1,0 +1,380 @@
+<script>/* ?theme=light|dark forces the colour scheme for this visit */(function(){try{var t=new URLSearchParams(location.search).get('theme');if(t==='dark'||t==='light'){var r=document.documentElement;r.setAttribute('data-theme',t);r.classList.toggle('dark',t==='dark');r.classList.toggle('light',t==='light')}}catch(e){}})();</script>
+<div class="cs" id="cs">
+  <header class="hd">
+    <a class="logo" href="#/overview"><span class="mk"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5h7M17.5 14v7"/></svg></span>Creative Studio</a>
+    <div class="seg" id="cs-camps" role="group" aria-label="Campaign"></div>
+    <div class="hd-r"><label class="as" id="cs-as-w" hidden><span>Acting as</span><select id="cs-as" aria-label="Acting as"></select></label>
+      <span class="pill" id="cs-src" title="Where this screen's data came from"><span class="dot"></span><span></span></span>
+      <a class="btn" id="cs-repo" target="_blank" rel="noopener"><svg class="i" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.5a3 3 0 0 0-.9-2.4c3-.3 6-1.5 6-6.6a5.2 5.2 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.6 1.4a12.4 12.4 0 0 0-6.5 0C5.9 1.5 4.8 1.8 4.8 1.8a4.8 4.8 0 0 0-.1 3.6A5.2 5.2 0 0 0 3.3 9c0 5.1 3 6.3 6 6.6a3 3 0 0 0-.9 2.4V21"/></svg>Source</a>
+      <button class="ib" id="cs-theme" type="button" aria-label="Switch light or dark"><svg class="i" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+    </div>
+  </header>
+  <div class="bd">
+    <nav class="sb" id="cs-nav" aria-label="Sections"></nav>
+    <main id="cs-view" tabindex="-1"></main>
+  </div>
+  <footer class="sbar" id="cs-bar"></footer>
+  <div class="toast" id="cs-toast" role="status" aria-live="polite"></div>
+  <div class="dw" id="cs-dw" aria-hidden="true"><div class="ch"><h2 id="cs-dw-t"></h2><button class="ib" type="button" style="margin-left:auto" data-close aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="cb" id="cs-dw-b"></div></div>
+  <div class="lb" id="cs-lb" role="dialog" aria-modal="true"><button type="button" data-close>Close</button><div><img id="cs-lb-img" alt=""><p id="cs-lb-cap"></p></div></div>
+</div>
+<script>
+(function(){
+  /* ── data: the live binding when the page has one, otherwise the snapshot from the last real run ── */
+  var SNAP = __DATA__;
+  var sdk = window.iris && window.iris.data, D = SNAP, SOURCE = 'snapshot';
+  try { if (sdk && sdk.has && sdk.has('studio')) { var r = (sdk.rows('studio') || [])[0]; var d = r && (r.data || r); if (d && d.campaigns) { D = d; SOURCE = 'live'; } } } catch (e) {}
+
+  var $ = function (s, el) { return (el || document).querySelector(s) };
+  var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] }) };
+  var MN = { us: 'United States', mx: 'Mexico', jp: 'Japan', de: 'Germany' };
+  var KIND = { brand: 'var(--brand)', 'sub-brand': 'var(--brand)', market: 'var(--reg)', partner: 'var(--part)', campaign: 'var(--camp)' };
+  var SRC = { generated: 'Generated', reused_generated: 'Generated · cached', reused_market: 'Local photo', reused_global: 'Supplied photo' };
+  var STAT = { built: ['Built', 'ok'], planned: ['Planned', 'mute'], blocked_legal: ['Blocked · legal', 'bad'], error: ['Error', 'bad'] };
+  var FMT = { '1x1': '1:1', '9x16': '9:16', '16x9': '16:9', header: 'Newsletter header', inline: 'Newsletter inline' };
+  var I = function (p) { return '<svg class="i" viewBox="0 0 24 24">' + p + '</svg>' };
+  var IC = {
+    overview: I('<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
+    brief: I('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>'),
+    composer: I('<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>'),
+    deliverables: I('<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'),
+    creatives: I('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'),
+    pipeline: I('<circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h4a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M7 18h4a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/>'),
+    approvals: I('<path d="M9 12l2 2 4-4"/><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'),
+    config: I('<path d="M4 7h10M4 17h6M14 7a3 3 0 1 0 6 0 3 3 0 1 0-6 0M10 17a3 3 0 1 0 6 0 3 3 0 1 0-6 0M20 17h-4"/>'),
+  };
+
+  var S = { camp: D.campaigns[0].id, fmt: '1x1', ctc: 'product', dFilter: { market: '', status: '', channel: '', creative: '', q: '' }, gMarket: '', gType: '' };
+  var TN = function (t) { return (D.standards[t] || {}).name || t };                 // creative type name
+  var team = function (id) { var t = D.teams[id]; return t ? t.name : id };           // approver team name
+  /* ── editing: only when served by `python -m engines.vanilla studio` (window.STUDIO_EDIT). The server checks
+     every save against teams.yaml again; the buttons here only save people a refused click. ── */
+  var EDIT = !!window.STUDIO_EDIT, CUR = null;
+  var people = []; Object.keys(D.teams).forEach(function (t) { (D.teams[t].members || []).forEach(function (m) { if (people.indexOf(m) < 0) people.push(m) }) });
+  var ME = people[0]; try { var sv = localStorage.getItem('cs-as'); if (people.indexOf(sv) >= 0) ME = sv } catch (e) {}
+  var myTeams = function () { return Object.keys(D.teams).filter(function (t) { return (D.teams[t].members || []).indexOf(ME) >= 0 }) };
+  var lockOf = function (path, locked) { return locked.filter(function (l) { return path === l.section || path.indexOf(l.section + '.') === 0 })[0] };
+  var editorsOf = function (path, x) { var l = lockOf(path, x.protected); return l ? l.editors : x.editors };
+  var mayEdit = function (path, x) { var e = editorsOf(path, x), mine = myTeams(); return Object.keys(e).some(function (t) { return mine.indexOf(t) >= 0 }) };
+  var editable = function (v) { return v == null || ['string', 'number', 'boolean'].indexOf(typeof v) >= 0 || (Array.isArray(v) && v.every(function (i) { return i == null || typeof i !== 'object' })) };
+  var getAt = function (obj, path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k] }, obj) };
+  var toast = function (html, bad) { var t = $('#cs-toast'); t.innerHTML = html; t.className = 'toast on' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = 'toast' }, 6000) };
+  var api = function (url, body) { return fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}).then(function (r) { return r.json().then(function (j) { j.status = r.status; return j }) }) };
+  var refresh = function () { return api('/api/data').then(function (d) { delete d.status; D = d; render() }) };
+  var editBtn = function (path, v) {
+    if (!EDIT || !CUR || !editable(v) || path === 'id') return '';
+    if (mayEdit(path, CUR)) return '<button type="button" class="eb" data-edit="' + esc(path) + '" aria-label="Edit ' + esc(path) + '" title="Edit"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>';
+    return '<span class="eb no" title="Only ' + esc(Object.keys(editorsOf(path, CUR)).map(team).join(', ') + ' may change this') + '"><svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>';
+  };
+  var teamChip = function (id) { var t = D.teams[id] || { members: [] }; return '<span class="chip" style="--c:var(--ops)" title="' + esc((t.members || []).join(', ')) + '">' + esc(team(id)) + '</span>' };
+  var ICO = {
+    image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    shieldx: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m14.5 9.5-5 5"/><path d="m9.5 9.5 5 5"/>',
+    check: '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/>',
+    timer: '<line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/>',
+    hourglass: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+    dollar: '<line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'
+  };
+  var kpi = function (icon, tone, label, value, sub, tip) { return '<div class="card kpi" title="' + esc(tip) + '"><span class="kic ' + tone + '"><svg viewBox="0 0 24 24">' + ICO[icon] + '</svg></span><div class="k">' + esc(label) + '</div><div class="v"' + (tone === 'bad' && Number(value) > 0 ? ' style="color:var(--badc)"' : '') + '>' + esc(value) + '</div><div class="s">' + esc(sub) + '</div></div>' };
+  try { var saved = JSON.parse(localStorage.getItem('cs-state2') || '{}'); if (saved.camp && D.campaigns.some(function (c) { return c.id === saved.camp })) S.camp = saved.camp } catch (e) {}
+  var save = function () { try { localStorage.setItem('cs-state2', JSON.stringify({ camp: S.camp })) } catch (e) {} };
+  var camp = function () { return D.campaigns.filter(function (c) { return c.id === S.camp })[0] };
+  var mkt = function (m) { return D.markets.filter(function (x) { return x.campaign === S.camp && x.market === m })[0] };
+  var dels = function () { return D.deliverables.filter(function (d) { return d.campaign === S.camp }) };
+  var chip = function (t, c, off) { return '<span class="chip' + (off ? ' off' : '') + '" style="--c:' + c + '">' + esc(t) + '</span>' };
+  var st = function (s) { var x = STAT[s] || [s, 'mute']; return '<span class="st ' + x[1] + '">' + esc(x[0]) + '</span>' };
+  var legalSt = function (m) { return m.legal_findings.length ? '<span class="st bad">Blocked · “' + esc(m.legal_findings[0].word) + '”</span>' : '<span class="st ok">Legal passed</span>' };
+  var msgSrc = function (s) { return { brief: 'from the brief', translated: 'translated at run time', fallback_en: 'English fallback' }[s] || s };
+
+  /* ── chrome ── */
+  function chrome(route) {
+    $('#cs-camps').innerHTML = D.campaigns.map(function (c) { return '<button type="button" data-camp="' + c.id + '" aria-pressed="' + (c.id === S.camp) + '">' + esc(c.name) + '</button>' }).join('');
+    var c = camp(), n = dels();
+    var items = [['overview', 'Overview', ''], ['brief', 'Campaign brief', ''], ['composer', 'Composer', c.markets.length + ' mkts'],
+      ['deliverables', 'Deliverables', n.length], ['creatives', 'Creatives', n.filter(function (d) { return d.image }).length],
+      ['approvals', 'Approvals', c.markets.length], ['pipeline', 'How it works', '']];
+    var C = D.config, cfgItems = [['markets', 'Markets', Object.keys(C.markets).length], ['brands', 'Brands', Object.keys(C.brands).length],
+      ['partners', 'Partners', Object.keys(C.partners).length], ['channels', 'Channels', Object.keys(C.channels).length],
+      ['campaigns', 'Campaigns', Object.keys(C.campaigns).length], ['standards', 'Creative types', Object.keys(D.standards).length],
+      ['teams', 'Teams & access', Object.keys(D.teams).length], ['org', 'Org settings', '']];
+    var link = function (href, on, icon, label, ct) { return '<a href="' + href + '"' + (on ? ' aria-current="page"' : '') + '>' + icon + esc(label) + (ct !== '' ? '<span class="ct">' + esc(ct) + '</span>' : '') + '</a>' };
+    $('#cs-nav').innerHTML = '<div class="lbl">' + esc(c.name) + '</div>' + items.map(function (it) { return link('#/' + it[0], route === it[0], IC[it[0]], it[1], it[2]) }).join('') +
+      '<div class="lbl">Configuration</div>' + cfgItems.map(function (it) { return link('#/config/' + it[0], route === 'config/' + it[0], IC.config, it[1], it[2]) }).join('') +
+      '<div class="foot">Every number and image is real pipeline output.</div>';
+    var src = $('#cs-src'); src.className = 'pill' + (SOURCE === 'live' || EDIT ? ' live' : ''); src.lastElementChild.textContent = EDIT ? 'LIVE · LOCAL CONFIG' : SOURCE === 'live' ? 'LIVE DATASET' : 'SNAPSHOT · LAST RUN';
+    $('#cs-repo').href = D.repo;
+    $('#cs-bar').innerHTML = '<span>provider <b>' + esc(c.provider) + '</b></span><span>image <b>' + esc(D.org.genai.openrouter_image_model) + '</b></span><span>text <b>' + esc(D.org.genai.openrouter_text_model) + '</b></span><span>last run <b>' + esc(c.efficiency.run_seconds) + ' s</b></span><span>data <b>' + (SOURCE === 'live' ? 'live dataset' : 'snapshot') + '</b></span><span style="margin-left:auto">' + esc(D.generated_from) + '</span>';
+  }
+
+  /* ── views ── */
+  var V = {};
+  V.overview = function () {
+    var c = camp(), t = c.totals, e = c.efficiency, ms = D.markets.filter(function (m) { return m.campaign === S.camp }), planned = 0;
+    Object.keys(t.planned).forEach(function (k) { planned += t.planned[k] });
+    var built = dels().filter(function (d) { return d.image });
+    var types = c.creative_types.map(function (ct) {
+      var mine = built.filter(function (d) { return d.creative === ct }), sample = mine.filter(function (d) { return d.format === '1x1' || d.format === 'header' })[0] || mine[0], st = D.standards[ct] || {};
+      var must = [st.label, st.rules.people ? 'AI-generated' : null, st.rules.max_headline_chars ? '≤ ' + st.rules.max_headline_chars + ' chars' : null].filter(Boolean);
+      return '<a class="ctype" href="#/creatives" data-gtype="' + ct + '">' + (sample ? '<img src="' + esc(sample.image) + '" alt="" loading="lazy">' : '<span class="th ph" style="width:100%;height:auto;aspect-ratio:1"></span>') +
+        '<b>' + esc(st.name || ct) + '</b><small>' + esc(st.purpose || '') + '</small><span class="ctm"><span class="tag">' + mine.length + ' built</span>' + (must.length ? must.map(function (x) { return '<span class="tag">' + esc(x) + '</span>' }).join('') : '<span class="tag">no extra rules</span>') + '</span></a>' }).join('');
+    return head('Overview', c.name, 'One brief, ' + ms.length + ' markets, ' + c.creative_types.length + ' creative types. Brand <b>' + esc(c.sub_brand || c.brand) + '</b>' + (c.partner ? ', partner <b>' + esc(c.partner) + '</b>' : '') + '.', '<a class="btn pri" href="#/composer/' + c.markets[0] + '">' + IC.composer + 'Open composer</a>') +
+      '<div class="grid g4">' +
+      kpi('image', 'ok', 'Creatives built', t.built, t.images_generated + ' generated · ' + t.images_reused + ' reused', 'Finished ads: market × product × creative type × format') +
+      kpi('clock', 'mut', 'Planned', planned, Object.keys(t.planned).join(', ') + ' (no generator yet)', 'Asset types a channel asks for that have no generator yet; listed, not dropped') +
+      kpi('shieldx', 'bad', 'Blocked by legal', t.blocked_legal, t.blocked_legal ? 'fail closed, per market' : 'every market passed', 'Deliverables not made because a market’s message used a banned word') +
+      kpi('check', 'ok', 'Brand checks', t.brand_checks_passed + ' / ' + t.built, 'logo · colour · contrast · disclosure', 'Checked on the actual pixels, plus each creative type’s rules') +
+      kpi('timer', 'pri', 'Run time', e.run_seconds + ' s', 'all markets, in parallel', 'How long the whole campaign took') +
+      kpi('hourglass', 'pri', 'Manual estimate', e.manual_estimate_hours + ' h', 'at 45 min per creative', 'The same work by hand, at the rate in org.yaml') +
+      kpi('dollar', 'pri', 'GenAI cost', '$' + Number(e.genai_cost_usd).toFixed(2), 'this run · cached images are free', 'Image generation spend for this run') +
+      kpi('globe', 'pri', 'Markets', ms.length, c.markets.join(' · ').toUpperCase(), 'Each with its own locale, audience and rules') + '</div>' +
+      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Creative types</h2><span class="sp tag">creative_standards.yaml · owned by ' + esc(team('brand')) + '</span></div><div class="cb"><div class="ctypes">' + types + '</div></div></div>' +
+      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Markets</h2><span class="sp tag">' + ms.length + '</span></div>' +
+      ms.map(function (m) { return '<a class="mrow" href="#/composer/' + m.market + '"><span class="mcode">' + esc(m.market.toUpperCase()) + '</span><span class="mmsg">“' + esc(m.message) + '”<small>' + esc(m.locale) + ' · ' + esc(msgSrc(m.message_source)) + '</small></span>' + legalSt(m) + '<span class="tag">' + m.counts.built + ' built</span></a>' }).join('') + '</div>';
+  };
+  V.brief = function () {
+    var c = camp();
+    var loc = Object.keys(c.localized).map(function (k) { return '<tr><td class="mono">' + esc(k) + '</td><td>' + esc(c.localized[k]) + '</td></tr>' }).join('');
+    var refs = [['brands/' + c.brand + '.yaml', 'Brand team', 'var(--brand)', 'logo, colours, tone, legal']];
+    if (c.sub_brand) refs.push(['brands/' + c.sub_brand + '.yaml', 'Brand team', 'var(--brand)', 'sub-brand: inherits, overrides colours and tone']);
+    c.markets.forEach(function (m) { refs.push(['markets/' + m + '.yaml', 'Regional team', 'var(--reg)', 'locale, audience, local overrides']) });
+    if (c.partner) refs.push(['partners/' + c.partner + '.yaml', 'Partnerships', 'var(--part)', 'co-brand logo and rules, on/off per market']);
+    c.channels.forEach(function (ch) { refs.push(['channels/' + ch + '.yaml', 'Channels', 'var(--chan)', 'formats and asset types']) });
+    refs.push(['org.yaml', 'Ops', 'var(--ops)', 'regions, velocity, approvers']);
+    return head('Campaign brief', 'campaigns/' + c.id + '.yaml', 'The campaign manager owns only what changes per campaign. Everything else is referenced by id and owned by another team.') +
+      '<div class="grid g2"><div class="card"><div class="ch"><span class="owner" style="--c:var(--camp)"></span><h2>What the brief holds</h2><span class="sp tag">campaign manager</span></div><div class="cb"><dl class="kv">' +
+      '<dt>Name</dt><dd>' + esc(c.name) + '</dd><dt>Message</dt><dd><b>' + esc(c.message) + '</b></dd>' +
+      '<dt>Products</dt><dd>' + c.products.map(function (p) { return '<div style="margin-bottom:6px"><b>' + esc(p.name) + '</b> <span class="tag">' + esc(p.id) + '</span><br><small style="color:var(--mute)">' + esc(p.description || '') + '</small></div>' }).join('') + '</dd>' +
+      '<dt>Markets</dt><dd>' + c.markets.map(function (m) { return '<a href="#/composer/' + m + '">' + chip(m, 'var(--reg)') + '</a>' }).join(' ') + ' <small style="color:var(--mute)">by id</small></dd>' +
+      '<dt>Channels</dt><dd>' + c.channels.map(function (ch) { return chip(ch, 'var(--chan)') }).join(' ') + '</dd>' +
+      '<dt>Creative types</dt><dd>' + c.creative_types.map(function (ct) { return chip(TN(ct), 'var(--brand)') }).join(' ') + '</dd>' +
+      '<dt>Brand</dt><dd>' + chip(c.brand, 'var(--brand)') + (c.sub_brand ? ' ' + chip(c.sub_brand, 'var(--brand)') : '') + '</dd>' +
+      '<dt>Partner</dt><dd>' + (c.partner ? chip(c.partner, 'var(--part)') : '<span class="tag">none</span>') + '</dd></dl>' +
+      (loc ? '<h3 style="font-size:13px;margin:16px 0 6px">Localized lines in the brief</h3><table>' + loc + '</table><p style="font-size:12px;color:var(--mute);margin:8px 0 0">A market with no line here is translated at run time.</p>' : '') + '</div></div>' +
+      '<div class="card"><div class="ch"><h2>Owned elsewhere, referenced here</h2><span class="sp tag">' + refs.length + ' files</span></div><div class="tx"><table>' +
+      refs.map(function (r) { return '<tr><td><span class="owner" style="--c:' + r[2] + '"></span></td><td class="mono">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '<br><small style="color:var(--mute)">' + esc(r[3]) + '</small></td></tr>' }).join('') + '</table></div></div></div>';
+  };
+  V.composer = function (m) {
+    var c = camp(); m = m || c.markets[0];
+    var tabs = '<div class="tabs">' + Object.keys(MN).map(function (k) { return c.markets.indexOf(k) >= 0 ? '<a href="#/composer/' + k + '"' + (k === m ? ' aria-current="page"' : '') + '>' + esc(MN[k]) + '</a>' : '<span class="na" title="Not in this brief">' + esc(MN[k]) + '</span>' }).join('') + '</div>';
+    var x = mkt(m);
+    if (!x) return head('Composer', c.name, '') + tabs + '<div class="empty"><b>' + esc(c.name) + ' doesn’t run in ' + esc(MN[m] || m) + '.</b>The brief lists markets: [' + esc(c.markets.join(', ')) + ']. Nothing is built for a market the brief doesn’t name.</div>';
+    var names = x.layers.map(function (l) { return l.file });
+    var layer = function (i) { if (i === 'partner') return chip(x.partner.file, KIND.partner); var l = x.layers[i]; return chip(l.file, KIND[l.kind]) };
+    var rows = x.layers.map(function (l) { return '<li>' + chip(l.file, KIND[l.kind]) + '<small>' + esc(l.kind) + (l['for'] ? ' · overrides ' + esc(l['for']) : '') + '</small></li>' }).join('');
+    if (x.partner) rows += '<li>' + chip(x.partner.file, KIND.partner, !x.partner.active) + '<small>partner · ' + (x.partner.active ? 'active' : 'OFF, switched off by ' + esc(x.partner.switched_off_by)) + '</small></li>';
+    rows += '<li>' + chip('campaigns/' + c.id + '.yaml', KIND.campaign) + '<small>campaign · message, products, markets</small></li>';
+    var won = x.settings.map(function (s) { return '<tr><td>' + esc(s.setting) + '</td><td class="v">' + esc(s.value) + '</td><td>' + layer(s.layer) + '</td></tr>' }).join('');
+    var lists = x.lists.map(function (l) { return '<h3 style="font-size:13px;margin:16px 0 8px">' + esc(l.setting) + ' <span style="color:var(--legal);font-weight:500">🔒 add-only</span></h3>' + (l.items.length ? l.items.map(function (it) { var c2 = it.layer === 'partner' ? KIND.partner : KIND[x.layers[it.layer].kind]; return '<span class="wchip" style="--c:' + c2 + '" title="added by ' + esc(it.layer === 'partner' ? x.partner.file : names[it.layer]) + '">' + esc(it.value) + '</span>' }).join('') : '<span class="tag">none</span>') }).join('');
+    var blocked = x.legal_findings.length;
+    var ctypes = c.creative_types; if (ctypes.indexOf(S.ctc) < 0) S.ctc = ctypes[0];
+    var mine = dels().filter(function (d) { return d.market === m && d.type === 'static' && d.creative === S.ctc });
+    var fmts = []; mine.forEach(function (d) { if (fmts.indexOf(d.format) < 0) fmts.push(d.format) });
+    if (fmts.indexOf(S.fmt) < 0) S.fmt = fmts[0];
+    var shots = mine.filter(function (d) { return d.format === S.fmt && d.image });
+    return head('Composer', c.name + ' · ' + MN[m], 'Every config layer in the order the engine applies it, which file won each setting, and the creative that came out.', '<a class="btn" href="' + esc(D.repo) + '/blob/main/engines/vanilla/explain.py" target="_blank" rel="noopener">explain --campaign ' + esc(c.id) + ' --market ' + esc(m) + '</a>') + tabs +
+      '<div class="grid g2"><div class="grid" style="align-content:start"><div class="card"><div class="ch">' + IC.composer + '<h2>Layers, applied in order</h2></div><div class="cb"><ol class="layers">' + rows + '</ol></div></div>' +
+      '<div class="card"><div class="ch"><h2>Who set what</h2></div><div class="tx"><table class="won">' + won + '</table></div><div class="cb" style="padding-top:2px">' + lists + '</div></div></div>' +
+      '<div class="grid" style="align-content:start"><div class="card"><div class="cb"><div class="crumb">' + esc(x.market_name) + ' · ' + esc(x.locale) + '</div><p class="msg">“' + esc(x.message) + '”</p><small>' + esc(msgSrc(x.message_source)) + '</small>' +
+      (blocked ? '<div class="note bad"><b>Blocked before rendering.</b> “' + esc(x.legal_findings[0].word) + '” is in this market’s merged banned list. This market ships nothing; the others are unaffected.</div>' : '<div class="note ok"><b>Legal check passed.</b> No banned word in the message or call to action.</div>') +
+      '<h3 style="font-size:13px;margin:16px 0 8px">Approver teams <small style="color:var(--mute);font-weight:500">hover for members</small></h3>' + x.approvers.map(teamChip).join(' ') + '</div></div>' +
+      '<div class="card"><div class="ch"><h2>Output</h2><div class="sp tabs" style="margin:0">' + ctypes.map(function (ct) { return '<button type="button" data-ctc="' + ct + '" aria-pressed="' + (ct === S.ctc) + '">' + esc(TN(ct)) + '</button>' }).join('') + '</div></div><div class="ch" style="padding-top:0;border-bottom:0"><span class="tag" style="white-space:normal;line-height:1.4">' + esc((D.standards[S.ctc] || {}).purpose || '') + '</span><div class="sp tabs" style="margin:0">' + fmts.map(function (f) { return '<button type="button" data-fmt="' + f + '" aria-pressed="' + (f === S.fmt) + '">' + esc(FMT[f] || f) + '</button>' }).join('') + '</div></div><div class="cb">' +
+      (blocked ? '<div class="empty"><b>Not rendered</b>Blocked by the legal check.</div>' : shots.length ? '<div class="shots">' + shots.map(function (d) { return '<figure data-lb="' + esc(d.image) + '" data-cap="' + esc(d.path) + '"><img src="' + esc(d.image) + '" alt="' + esc(d.product + ' ' + d.format) + '" loading="lazy"><figcaption><span>' + esc(d.product) + '</span><span>' + esc(SRC[d.source] || d.source) + '</span></figcaption></figure>' }).join('') + '</div>' : '<div class="empty"><b>No ' + esc(FMT[S.fmt] || S.fmt) + ' here</b></div>') +
+      '</div></div></div></div>';
+  };
+  V.deliverables = function () {
+    var c = camp(), all = dels(), f = S.dFilter;
+    var rows = all.filter(function (d) { return (!f.market || d.market === f.market) && (!f.status || d.status === f.status) && (!f.channel || d.channel === f.channel) && (!f.creative || d.creative === f.creative) && (!f.q || (d.path + ' ' + d.product + ' ' + d.type + ' ' + d.creative).toLowerCase().indexOf(f.q.toLowerCase()) >= 0) });
+    var uniq = function (k) { var o = []; all.forEach(function (d) { if (o.indexOf(d[k]) < 0) o.push(d[k]) }); return o };
+    var sel = function (k, label, vals) { return '<select data-f="' + k + '" aria-label="' + label + '"><option value="">' + label + ': all</option>' + vals.map(function (v) { return '<option value="' + esc(v) + '"' + (f[k] === v ? ' selected' : '') + '>' + esc(k === 'market' ? MN[v] || v : k === 'creative' ? TN(v) : v) + '</option>' }).join('') + '</select>' };
+    return head('Deliverables', c.name, 'Everything this campaign needs, from the channel registry: built, planned (no generator yet) or blocked by the legal check. Select a row for its detail.') +
+      '<div class="card"><div class="tb"><input type="search" data-f="q" placeholder="Search path, product, type…" value="' + esc(f.q) + '">' + sel('market', 'Market', uniq('market')) + sel('creative', 'Creative', uniq('creative')) + sel('channel', 'Channel', uniq('channel')) +
+      '<div class="fchips">' + ['', 'built', 'planned', 'blocked_legal'].map(function (s) { var n = s ? all.filter(function (d) { return d.status === s }).length : all.length; return '<button type="button" data-st="' + s + '" aria-pressed="' + (f.status === s) + '">' + (s ? STAT[s][0] : 'All') + ' · ' + n + '</button>' }).join('') + '</div></div>' +
+      (rows.length ? '<div class="tw"><table><thead><tr><th></th><th>Market</th><th>Product</th><th>Creative</th><th>Channel</th><th>Format</th><th>Asset</th><th>Status</th><th>Image source</th><th>Brand check</th></tr></thead><tbody>' +
+        rows.map(function (d) { var i = all.indexOf(d); return '<tr class="click" data-row="' + i + '"><td>' + (d.image ? '<img class="th" src="' + esc(d.image) + '" alt="" loading="lazy">' : '<span class="th ph"></span>') + '</td><td>' + esc(d.market.toUpperCase()) + '</td><td>' + esc(d.product) + '</td><td>' + esc(TN(d.creative)) + '</td><td>' + esc(d.channel) + '</td><td class="mono">' + esc(FMT[d.format] || d.format) + '</td><td>' + esc(d.type) + '</td><td>' + st(d.status) + '</td><td>' + esc(SRC[d.source] || '—') + '</td><td>' + (d.checks ? (d.checks.pass ? '<span class="st ok">Passed</span>' : '<span class="st bad">Failed</span>') : '<span class="tag">—</span>') + '</td></tr>' }).join('') + '</tbody></table></div>'
+        : '<div class="cb"><div class="empty"><b>No deliverables match</b>Clear a filter to see more.</div></div>') + '</div>';
+  };
+  V.creatives = function () {
+    var c = camp(), imgs = dels().filter(function (d) { return d.image }), ms = [];
+    imgs.forEach(function (d) { if (ms.indexOf(d.market) < 0) ms.push(d.market) });
+    if (S.gMarket && ms.indexOf(S.gMarket) < 0) S.gMarket = '';
+    var cts = []; imgs.forEach(function (d) { if (cts.indexOf(d.creative) < 0) cts.push(d.creative) });
+    if (S.gType && cts.indexOf(S.gType) < 0) S.gType = '';
+    var shown = imgs.filter(function (d) { return (!S.gMarket || d.market === S.gMarket) && (!S.gType || d.creative === S.gType) });
+    return head('Creatives', c.name, imgs.length + ' built creatives. Filter by market; select one to view it full size.') +
+      '<div class="fchips" style="margin-bottom:10px">' + [''].concat(cts).map(function (t) { return '<button type="button" data-gtype="' + t + '" aria-pressed="' + (S.gType === t) + '">' + (t ? esc(TN(t)) : 'All types') + '</button>' }).join('') + '</div>' +
+      '<div class="fchips" style="margin-bottom:14px">' + [''].concat(ms).map(function (m) { return '<button type="button" data-gm="' + m + '" aria-pressed="' + (S.gMarket === m) + '">' + (m ? esc(MN[m]) : 'All markets') + '</button>' }).join('') + '</div>' +
+      (shown.length ? '<div class="gal">' + shown.map(fig).join('') + '</div>' : '<div class="empty"><b>No creatives</b>Every market in this campaign was blocked or planned.</div>');
+  };
+  V.approvals = function () {
+    var c = camp(), ms = D.markets.filter(function (m) { return m.campaign === S.camp });
+    return head('Approvals', c.name, 'Approver teams route per market from org.yaml (plus the partner’s team where the partner is active); teams.yaml says who is on each team and what they may edit. A blocked market never reaches approval.') +
+      '<div class="card"><div class="tx"><table><thead><tr><th>Market</th><th>Status</th><th>Approver teams</th><th>People</th><th>Built</th><th>Partner</th></tr></thead><tbody>' +
+      ms.map(function (m) { return '<tr class="click" data-go="#/composer/' + m.market + '"><td><b>' + esc(m.market_name) + '</b><br><small style="color:var(--mute)">' + esc(m.locale) + '</small></td><td>' + (m.legal_findings.length ? '<span class="st bad">Blocked · legal</span>' : '<span class="st warn">Pending approval</span>') + '</td><td>' + m.approvers.map(teamChip).join(' ') + '</td><td><small>' + m.approvers.map(function (a) { return esc(((D.teams[a] || {}).members || []).join(', ')) }).join('<br>') + '</small></td><td class="mono">' + m.counts.built + '</td><td>' + (m.partner ? chip(m.partner.id, 'var(--part)', !m.partner.active) : '<span class="tag">none</span>') + '</td></tr>' }).join('') + '</tbody></table></div></div>';
+  };
+  /* ── Configuration: one view for every kind of config file (list → detail). Owners, editors and locked
+     sections were computed by the repo's access.py when this page was built, not typed here. ── */
+  var KIND = { markets: ['Markets', 'Regional teams', 'var(--reg)', 'locale, audience and local overrides, one file per market'],
+    brands: ['Brands', 'Brand', 'var(--brand)', 'logo, colours, tone, legal; sub-brands inherit from a parent'],
+    partners: ['Partners', 'Partnerships', 'var(--part)', 'co-brand rules, switched on or off per market'],
+    channels: ['Channels', 'Channels / Media', 'var(--chan)', 'formats and asset types each channel needs'],
+    campaigns: ['Campaigns', 'Campaign managers', 'var(--camp)', 'what changes per campaign: message, products, markets, types'],
+    standards: ['Creative types', 'Brand', 'var(--brand)', 'creative_standards.yaml: how each type is shot, finished and checked'],
+    org: ['Org settings', 'Ops', 'var(--ops)', 'regions, velocity target, resources, approver routing, GenAI'] };
+  var who = function (map) { var ks = Object.keys(map || {}); return ks.length ? ks.map(function (t) { return '<span class="chip" style="--c:var(--ops)" title="' + esc((map[t] || []).join(', ')) + '">' + esc(team(t)) + '</span>' }).join(' ') : '<span class="tag">nobody</span>' };
+  var scalar = function (v) { return Array.isArray(v) ? v.map(function (x) { return typeof x === 'object' ? Object.keys(x).map(function (k) { return k + ': ' + (Array.isArray(x[k]) ? x[k].join(', ') : x[k]) }).join(' · ') : x }).join(Array.isArray(v) && v.some(function (x) { return typeof x === 'object' }) ? '\n' : ', ') : String(v) };
+  var rows = function (obj, prefix, locked, depth) {
+    return Object.keys(obj || {}).map(function (k) {
+      var path = prefix ? prefix + '.' + k : k, v = obj[k], lock = locked.filter(function (l) { return l.section === path })[0];
+      var key = '<td class="mono" style="padding-left:' + (12 + depth * 18) + 'px">' + esc(k) + (lock ? ' 🔒' : '') + '</td>';
+      if (v && typeof v === 'object' && !Array.isArray(v)) return '<tr' + (lock ? ' class="lockrow"' : '') + '>' + key + '<td>' + (lock ? '<span class="tag">locked · only ' + Object.keys(lock.editors).map(team).join(', ') + ' may change it</span>' : '') + '</td></tr>' + rows(v, path, locked, depth + 1);
+      return '<tr' + (lock ? ' class="lockrow"' : '') + ' data-path="' + esc(path) + '">' + key + '<td class="mono val"><span class="vt">' + esc(scalar(v)) + '</span>' + editBtn(path, v) + '</td></tr>';
+    }).join('');
+  };
+  var firstLeaf = function (obj, prefix, locked) {
+    for (var k in obj) { var p = prefix ? prefix + '.' + k : k, v = obj[k];
+      if (locked.some(function (l) { return p.indexOf(l.section) === 0 })) continue;
+      if (v && typeof v === 'object' && !Array.isArray(v)) { var r = firstLeaf(v, p, locked); if (r) return r } else if (typeof v === 'string' && k !== 'id') return [p, v] }
+    return null;
+  };
+  V.config = function (kind, id) {
+    if (kind === 'teams') return V.teams();
+    var C = D.config, k = KIND[kind] || [kind, '', 'var(--line)', ''], list = kind === 'org' ? C.org : kind === 'standards' ? C.standards : C[kind] || {};
+    var ids = Object.keys(list); id = id && list[id] ? id : ids[0];
+    var x = list[id], data = x.data; CUR = x;
+    var listHtml = ids.map(function (i) { var it = list[i], nm = it.data.name || it.data.org || i; return '<a class="mrow" href="#/config/' + kind + '/' + i + '"' + (i === id ? ' style="background:var(--accbg)"' : '') + '><span class="mcode" style="border-color:' + k[2] + ';color:' + k[2] + '">' + esc(i.slice(0, 4).toUpperCase()) + '</span><span class="mmsg">' + esc(nm) + '<small class="mono">' + esc(it.file) + '</small></span></a>' }).join('');
+    var leaf = firstLeaf(data, '', x.protected), ed = Object.keys(x.editors)[0], member = ed && (D.teams[ed] || {}).members ? D.teams[ed].members[0] : 'you@example.com';
+    var cmd = '<span class="c"># who may change this file</span>\npython -m engines.vanilla access ' + x.file + '\n' +
+      (leaf ? '<span class="c"># a checked, audited edit by its owner</span>\npython -m engines.vanilla access ' + x.file + ' --section ' + leaf[0] + ' \\\n    --as ' + member + ' --set "' + String(leaf[1]).slice(0, 30) + '"\n' : '') +
+      (x.protected.length ? '<span class="c"># a locked section: refused unless you are on ' + Object.keys(x.protected[0].editors).map(team).join(', ') + '</span>\npython -m engines.vanilla access ' + x.file + ' --section ' + x.protected[0].section + ' --as ' + member : '');
+    return head('Configuration', k[0], esc(k[3]) + '. Owned by <b>' + esc(k[1]) + '</b>; who may edit what comes from teams.yaml.') +
+      '<div class="grid" style="grid-template-columns:minmax(220px,300px) 1fr"><div class="card" style="align-self:start"><div class="ch"><h2>' + esc(k[0]) + '</h2><span class="sp tag">' + ids.length + '</span></div>' + listHtml + '</div>' +
+      '<div class="grid" style="align-content:start"><div class="card"><div class="ch"><span class="owner" style="--c:' + k[2] + '"></span><h2 class="mono">' + esc(x.file) + '</h2></div><div class="cb"><dl class="kv">' +
+      '<dt>May edit</dt><dd>' + who(x.editors) + '</dd>' + '<dt>May delete</dt><dd>' + who(x.deleters) + '</dd>' +
+      (x.protected.length ? '<dt>Locked sections</dt><dd>' + x.protected.map(function (l) { return '<div><span class="mono">🔒 ' + esc(l.section) + '</span> → ' + who(l.editors) + '</div>' }).join('') + '</dd>' : '') +
+      (x.used_by && x.used_by.length ? '<dt>Used by</dt><dd>' + x.used_by.map(function (u) { return chip((D.campaigns.filter(function (c) { return c.id === u })[0] || {}).name || u, 'var(--camp)') }).join(' ') + '</dd>' : (kind !== 'campaigns' && kind !== 'org' && kind !== 'standards' ? '<dt>Used by</dt><dd><span class="tag">no campaign yet</span></dd>' : '')) +
+      '</dl></div></div>' +
+      '<div class="card"><div class="ch"><h2>Fields</h2><span class="sp tag">' + (EDIT ? (Object.keys(x.editors).some(function (t) { return myTeams().indexOf(t) >= 0 }) ? 'you may edit this file' : 'read-only for ' + esc(ME.split('@')[0])) : 'as written in the file') + '</span></div><div class="tw"><table class="cfgt">' + rows(data, '', x.protected, 0) + '</table></div></div>' +
+      (EDIT ? '<div class="card"><div class="ch"><h2>See it on the ads</h2><span class="sp tag">re-runs the campaign · cached images cost $0</span></div><div class="cb">' +
+        ((kind === 'campaigns' ? [id] : x.used_by || []).length ? (kind === 'campaigns' ? [id] : x.used_by).map(function (u) { return '<button type="button" class="btn" data-rerun="' + esc(u) + '">Re-run ' + esc((D.campaigns.filter(function (c) { return c.id === u })[0] || {}).name || u) + '</button>' }).join(' ') : '<span class="tag">no campaign uses this file yet</span>') +
+        '<p class="hint">Text edits reuse the cached photos. A change to what a photo shows (audience, setting, tone) generates new ones and costs about $0.04 each.</p></div></div>'
+      : '<div class="card"><div class="ch"><h2>Change it</h2><span class="sp tag">checked against teams.yaml · audited</span></div><div class="cb"><p class="hint" style="margin-top:0">This copy is read-only. Clone the repo and run <span class="mono">python -m engines.vanilla studio</span> to edit these fields in the browser, with the same permissions. Or from a terminal:</p><div class="code">' + cmd + '</div></div></div>') + '</div></div>';
+  };
+  V.teams = function () {
+    var T = D.teams, G = D.config.grants;
+    var res = function (g) { return g.file + (g.section ? '#' + g.section : '') };
+    return head('Configuration', 'Teams & access', 'teams.yaml: who is on each team and what each team may read, create, update or delete. Grants add up; locked sections need a grant that names them.') +
+      '<div class="grid g2"><div class="card"><div class="ch"><h2>Teams</h2><span class="sp tag">' + Object.keys(T).length + '</span></div><div class="tx"><table><thead><tr><th>Team</th><th>Members</th><th>Approves in</th></tr></thead><tbody>' +
+      Object.keys(T).map(function (id) { var mk = Object.keys(D.org.approvers.by_market || {}).filter(function (m) { return D.org.approvers.by_market[m].indexOf(id) >= 0 }); if ((D.org.approvers.global || []).indexOf(id) >= 0) mk.unshift('every market');
+        return '<tr><td><b>' + esc(T[id].name) + '</b><br><small class="mono" style="color:var(--mute)">' + esc(id) + '</small></td><td><small>' + esc(T[id].members.join(', ')) + '</small></td><td>' + (mk.length ? mk.map(function (m) { return '<span class="tag">' + esc(m) + '</span>' }).join(' ') : '<span class="tag">—</span>') + '</td></tr>' }).join('') + '</tbody></table></div></div>' +
+      '<div class="card"><div class="ch"><h2>Grants</h2><span class="sp tag">' + G.length + '</span></div><div class="tx"><table><thead><tr><th>Team</th><th>May</th><th>On</th></tr></thead><tbody>' +
+      G.map(function (g) { return '<tr><td>' + (g.team === '*' ? '<span class="tag">everyone</span>' : esc(team(g.team))) + '</td><td>' + g.actions.map(function (a) { return '<span class="tag">' + a + '</span>' }).join(' ') + '</td><td class="mono">' + esc(res(g)) + (g.section ? ' 🔒' : '') + '</td></tr>' }).join('') + '</tbody></table></div>' +
+      '<div class="cb"><small style="color:var(--mute)">Locked sections: ' + D.config.protected.map(function (p) { return '<span class="mono">' + esc(p) + '</span>' }).join(', ') + '</small></div></div></div>' +
+      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Recent changes</h2><span class="sp tag">audit.jsonl · every saved edit</span></div>' + ((D.audit || []).length ? '<div class="tx"><table><thead><tr><th>When</th><th>Who</th><th>File</th><th>Sections</th></tr></thead><tbody>' +
+        D.audit.slice().reverse().map(function (a) { return '<tr><td class="mono"><small>' + esc(a.at.replace('T', ' ')) + '</small></td><td>' + esc(a.user) + '</td><td class="mono">' + esc(a.path) + '</td><td class="mono"><small>' + esc((a.sections || [a.action]).join(', ')) + '</small></td></tr>' }).join('') + '</tbody></table></div>'
+        : '<div class="cb"><span class="tag">no edits yet</span></div>') + '</div>';
+  };
+  V.pipeline = function () {
+    var box = function (x, y, w, h, t, s, c) { return '<rect class="box" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="10"' + (c ? ' style="stroke:' + c + '"' : '') + '/><text x="' + (x + 12) + '" y="' + (y + 22) + '">' + t + '</text>' + (s ? '<text class="s" x="' + (x + 12) + '" y="' + (y + 40) + '">' + s + '</text>' : '') };
+    var e = function (d, bad) { return '<path class="edge' + (bad ? ' bad' : '') + '" d="' + d + '"/>' };
+    var owners = [['org.yaml', 'Ops', 'var(--ops)'], ['brands/*', 'Brand', 'var(--brand)'], ['markets/*', 'Regional', 'var(--reg)'], ['partners/*', 'Partnerships', 'var(--part)'], ['channels/*', 'Channels', 'var(--chan)'], ['campaigns/*', 'Campaign', 'var(--camp)']];
+    var svg = '<svg class="flow" viewBox="0 0 1180 470" role="img" aria-label="How the components connect"><defs><marker id="cs-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--mute)"/></marker></defs>' +
+      owners.map(function (o, i) { return box(10, 14 + i * 74, 170, 56, o[0], o[1], o[2]) + e('M180 ' + (42 + i * 74) + ' C 215 ' + (42 + i * 74) + ' 215 235 248 235') }).join('') +
+      box(250, 200, 190, 70, 'resolve_market', 'override + add-only merge') + e('M440 235 H 478') +
+      box(480, 200, 150, 70, 'legal_check', 'per market, fail closed') + e('M555 270 V 330', 1) + box(470, 332, 170, 56, 'market ships nothing', 'others unaffected', 'var(--badc)') +
+      e('M630 235 H 668') + box(670, 200, 170, 70, 'find_asset', 'market → global → cache') +
+      e('M755 200 V 140') + box(680, 70, 150, 68, 'GenAI provider', 'OpenRouter · OpenAI') + e('M830 104 C 880 104 880 210 902 220') +
+      e('M840 235 H 900') + box(902, 200, 120, 70, 'produce()', 'one Deliverable') +
+      e('M962 270 V 300') + box(880, 302, 166, 62, 'GENERATORS', 'static → render, else planned') +
+      e('M963 364 V 392') + box(880, 394, 166, 62, 'brand_check', 'on the pixels') +
+      e('M1046 425 C 1090 425 1090 150 1066 140') + box(1050, 70, 120, 68, 'outputs', 'plan · report · approvals') + '</svg>';
+    var eng = [['vanilla', 'The pipeline from scratch: Python, Pillow, stdlib HTTP, parallel sourcing.'], ['langgraph', 'Same core on LangGraph: Pydantic validation, fan-out with Send, retries, human approval per market.'], ['iris', 'Same core on IRIS: a workspace per campaign, every creative as a dataset record, approval cards synced back.']];
+    return head('How it works', 'Architecture', 'Each config file has one owner. The engine merges them per market, checks legal, sources or generates images, and asks the registry what it can build.') +
+      '<div class="card"><div class="cb">' + svg + '</div></div><div class="grid g3" style="margin-top:14px">' + eng.map(function (x) { return '<div class="card"><div class="ch"><h2 class="mono" style="color:var(--acc)">' + x[0] + '</h2></div><div class="cb" style="color:var(--sub)">' + esc(x[1]) + '</div></div>' }).join('') + '</div>' +
+      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Run it</h2><span class="sp tag">same config in, same files out</span></div><div class="cb"><div class="code"><span class="c"># offline, no key</span>\npython -m engines.vanilla run --campaign ' + esc(S.camp) + ' --provider mock\n<span class="c"># which file set each value</span>\npython -m engines.vanilla explain --campaign ' + esc(S.camp) + ' --market ' + esc(camp().markets[0]) + '\n<span class="c"># the same workflow on LangGraph, with a human approval per market</span>\npython -m engines.langgraph run --campaign ' + esc(S.camp) + '\npython -m pytest -q</div></div></div>';
+  };
+
+  function head(crumb, title, sub, act) { return '<div class="pg-h"><div><div class="crumb">' + esc(crumb) + '</div><h1>' + esc(title) + '</h1>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + (act ? '<div class="act">' + act + '</div>' : '') + '</div>' }
+  function fig(d) { return '<figure data-lb="' + esc(d.image) + '" data-cap="' + esc(d.path) + '"><img src="' + esc(d.image) + '" alt="' + esc(d.market + ' ' + d.product + ' ' + d.creative + ' ' + d.format) + '" loading="lazy"><figcaption><span>' + esc(d.market.toUpperCase()) + ' · ' + esc(TN(d.creative)) + '</span><span class="mono">' + esc(FMT[d.format] || d.format) + '</span></figcaption></figure>' }
+
+  /* ── router ── */
+  function render() {
+    var h = (location.hash || '#/overview').slice(2).split('/'), route = V[h[0]] ? h[0] : 'overview';
+    chrome(route === 'config' ? 'config/' + (h[1] || 'markets') : route); closeDw();
+    $('#cs-view').innerHTML = route === 'config' ? V.config(h[1] || 'markets', h[2]) : V[route](h[1]);
+  }
+  function openDw(d) {
+    $('#cs-dw-t').textContent = (MN[d.market] || d.market) + ' · ' + d.product + ' · ' + (FMT[d.format] || d.format);
+    var ck = d.checks ? Object.keys(d.checks).filter(function (k) { return k !== 'pass' }).map(function (k) { var v = d.checks[k]; return '<dt>' + esc(k.replace(/_/g, ' ')) + '</dt><dd>' + (v.pass ? '<span class="st ok">Pass</span>' : '<span class="st bad">Fail</span>') + ' <small class="mono" style="color:var(--mute)">' + esc(Object.keys(v).filter(function (x) { return x !== 'pass' }).map(function (x) { return x.replace(/_/g, ' ') + ' ' + v[x] }).join(' · ')) + '</small></dd>' }).join('') : '';
+    $('#cs-dw-b').innerHTML = (d.image ? '<img src="' + esc(d.image) + '" alt="">' : '<div class="empty"><b>' + esc((STAT[d.status] || [d.status])[0]) + '</b>' + (d.status === 'planned' ? 'The channel asks for “' + esc(d.type) + '”, which has no generator yet. It is in the plan, not dropped.' : 'This market was blocked by the legal check before anything rendered.') + '</div>') +
+      '<dl class="kv"><dt>Status</dt><dd>' + st(d.status) + '</dd><dt>Path</dt><dd class="mono">' + esc(d.path) + '</dd><dt>Channel</dt><dd>' + esc(d.channel) + '</dd><dt>Type</dt><dd>' + esc(d.type) + '</dd><dt>Image source</dt><dd>' + esc(SRC[d.source] || '—') + '</dd>' + ck + '</dl>';
+    $('#cs-dw').setAttribute('open', ''); $('#cs-dw').setAttribute('aria-hidden', 'false');
+  }
+  function closeDw() { var w = $('#cs-dw'); w.removeAttribute('open'); w.setAttribute('aria-hidden', 'true') }
+
+  var root = $('#cs');
+  root.addEventListener('click', function (ev) {
+    var e = ev.target.closest('[data-edit],[data-save],[data-cancel],[data-rerun]');
+    if (e) { onEdit(e); return }
+    var t = ev.target.closest('[data-camp],[data-fmt],[data-ctc],[data-gtype],[data-st],[data-gm],[data-row],[data-go],[data-lb],[data-close]');
+    if (!t) return;
+    if (t.hasAttribute('data-camp')) { S.camp = t.getAttribute('data-camp'); save(); S.dFilter = { market: '', status: '', channel: '', creative: '', q: '' }; var h = location.hash.split('/'); if (h[1] === 'composer') location.hash = '#/composer'; else render(); return }
+    if (t.hasAttribute('data-fmt')) { S.fmt = t.getAttribute('data-fmt'); render(); return }
+    if (t.hasAttribute('data-ctc')) { S.ctc = t.getAttribute('data-ctc'); render(); return }
+    if (t.hasAttribute('data-gtype')) { S.gType = t.getAttribute('data-gtype'); if (location.hash !== '#/creatives') { ev.preventDefault(); location.hash = '#/creatives'; } else render(); return }
+    if (t.hasAttribute('data-st')) { S.dFilter.status = t.getAttribute('data-st'); render(); return }
+    if (t.hasAttribute('data-gm')) { S.gMarket = t.getAttribute('data-gm'); render(); return }
+    if (t.hasAttribute('data-go')) { location.hash = t.getAttribute('data-go'); return }
+    if (t.hasAttribute('data-row')) { root.querySelectorAll('tr[aria-selected]').forEach(function (r) { r.removeAttribute('aria-selected') }); t.setAttribute('aria-selected', 'true'); openDw(dels()[+t.getAttribute('data-row')]); return }
+    if (t.hasAttribute('data-lb')) { $('#cs-lb-img').src = t.getAttribute('data-lb'); $('#cs-lb-cap').textContent = t.getAttribute('data-cap'); $('#cs-lb').setAttribute('open', ''); return }
+    if (t.hasAttribute('data-close')) { closeDw(); $('#cs-lb').removeAttribute('open') }
+  });
+  function onEdit(e) {
+    if (e.hasAttribute('data-cancel')) { render(); return }
+    if (e.hasAttribute('data-rerun')) {
+      var cid = e.getAttribute('data-rerun'); e.disabled = true; e.textContent = 'Running…';
+      api('/api/run', { campaign: cid }).then(function (r) {
+        if (!r.ok) return toast('Run failed: ' + esc(r.error), true);
+        toast('<b>' + esc(cid) + '</b> re-run in ' + r.seconds + ' s · ' + r.totals.built + ' creatives built. <a href="#/creatives" data-camp="' + esc(cid) + '">See the ads</a>');
+        return refresh();
+      }).catch(function () { toast('The Studio server is not answering.', true); render() });
+      return;
+    }
+    var tr = e.closest('tr'), path = tr.getAttribute('data-path'), td = tr.querySelector('.val');
+    if (e.hasAttribute('data-edit')) {
+      var v = getAt(CUR.data, path), text = Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v);
+      td.innerHTML = '<div class="ed">' + (text.length > 60 ? '<textarea rows="3">' + esc(text) + '</textarea>' : '<input value="' + esc(text) + '">') +
+        '<div class="edb"><button type="button" class="btn pri" data-save>Save</button><button type="button" class="btn" data-cancel>Cancel</button>' +
+        '<small>' + (Array.isArray(v) ? 'comma-separated list · ' : typeof v === 'number' ? 'a number · ' : typeof v === 'boolean' ? 'true or false · ' : '') + 'saved as ' + esc(ME) + '</small></div><div class="err" hidden></div></div>';
+      var f = td.querySelector('input,textarea'); f.focus(); f.select(); return;
+    }
+    // save
+    var old = getAt(CUR.data, path), raw = td.querySelector('input,textarea').value.trim(), err = td.querySelector('.err'), val = raw;
+    if (Array.isArray(old)) val = raw ? raw.split(',').map(function (x) { return x.trim() }).filter(Boolean) : [];
+    else if (typeof old === 'number') { val = Number(raw); if (raw === '' || isNaN(val)) { err.hidden = false; err.textContent = 'This field takes a number.'; return } }
+    else if (typeof old === 'boolean') { if (raw !== 'true' && raw !== 'false') { err.hidden = false; err.textContent = 'Type true or false.'; return } val = raw === 'true' }
+    e.disabled = true;
+    api('/api/set', { user: ME, path: CUR.file, section: path, value: val }).then(function (r) {
+      if (!r.ok) { e.disabled = false; err.hidden = false; err.textContent = r.status === 403 ? 'Refused: ' + r.error : r.error; return }
+      var used = CUR.used_by || [];
+      toast(r.changed.length ? 'Saved <span class="mono">' + esc(CUR.file) + '</span> · ' + esc(r.changed.join(', ')) + ' · logged as ' + esc(ME) + (used.length ? '. Re-run to see it on the ads.' : '.') : 'No change.');
+      return refresh();
+    }).catch(function () { e.disabled = false; err.hidden = false; err.textContent = 'The Studio server is not answering.' });
+  }
+  root.addEventListener('keydown', function (ev) { var f = ev.target; if (!f.closest || !f.closest('.ed')) return;
+    if (ev.key === 'Enter' && (f.tagName === 'INPUT' || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); f.closest('.ed').querySelector('[data-save]').click() }
+    if (ev.key === 'Escape') { ev.stopPropagation(); render() } });
+  if (EDIT) {
+    var sel = $('#cs-as'); $('#cs-as-w').hidden = false;
+    sel.innerHTML = Object.keys(D.teams).map(function (t) { return '<optgroup label="' + esc(D.teams[t].name) + '">' + (D.teams[t].members || []).map(function (m) { return '<option value="' + esc(m) + '"' + (m === ME ? ' selected' : '') + '>' + esc(m.split('@')[0]) + ' · ' + esc(D.teams[t].name) + '</option>' }).join('') + '</optgroup>' }).join('');
+    sel.addEventListener('change', function () { ME = sel.value; try { localStorage.setItem('cs-as', ME) } catch (e) {} render(); toast('Now acting as <b>' + esc(ME) + '</b> (' + esc(myTeams().map(team).join(', ')) + ')') });
+  }
+  root.addEventListener('input', function (ev) { var t = ev.target; if (t.matches('[data-f="q"]')) { S.dFilter.q = t.value; var pos = t.selectionStart; render(); var n = $('[data-f="q"]'); n.focus(); n.setSelectionRange(pos, pos) } });
+  root.addEventListener('change', function (ev) { var t = ev.target; if (t.matches('select[data-f]')) { S.dFilter[t.getAttribute('data-f')] = t.value; render() } });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { closeDw(); $('#cs-lb').removeAttribute('open') } });
+  $('#cs-theme').addEventListener('click', function () { var r = document.documentElement, dark = !(r.classList.contains('dark') || (!r.classList.contains('light') && matchMedia('(prefers-color-scheme: dark)').matches)); r.classList.toggle('dark', dark); r.classList.toggle('light', !dark); r.setAttribute('data-theme', dark ? 'dark' : 'light') });
+  window.addEventListener('hashchange', render);
+  render();
+})();
+</script>

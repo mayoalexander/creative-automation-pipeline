@@ -7,8 +7,8 @@ audience:
   traits: [families, value-conscious]
 overrides:
   acme:
-    marketing: { cta: Compra ahora }
-    legal: { banned_words: [garantizado, garantizada, cura, milagro] }
+    marketing: {cta: Compra ahora}
+    legal: {banned_words: [garantizado, garantizada, cura, milagro]}
 influencers:
-  - { handle: "@example_mamafit", tier: micro, fit: [family, beauty], role: affiliate, status: prospect }
-affiliate_program: { enabled: true, default_commission: 0.08, tracking: utm }
+  - {handle: "@example_mamafit", tier: micro, fit: [family, beauty], role: affiliate, status: prospect}
+affiliate_program: {enabled: true, default_commission: 0.08, tracking: utm}

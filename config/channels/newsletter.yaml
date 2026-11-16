@@ -1,7 +1,7 @@
 id: newsletter
 name: Email newsletter
 formats:
-  - { id: header, width: 1200, height: 600, label: 600px header @2x }
-  - { id: inline, width: 600,  height: 500, label: inline block }
+  - {id: header, width: 1200, height: 600, label: 600px header @2x}
+  - {id: inline, width: 600, height: 500, label: inline block}
 asset_types: [static, gif]
-text: { max_chars: 80, safe_zone: 0.05 }
+text: {max_chars: 80, safe_zone: 0.05}

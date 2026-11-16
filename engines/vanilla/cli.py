@@ -125,12 +125,22 @@ def main(argv: list[str] | None = None) -> int:
     x.add_argument("--all", action="store_true", help="every campaign × market")
     x.add_argument("--config", default="config")
     x.add_argument("--json", action="store_true")
+    so = sub.add_parser("studio", help="the Studio dashboard on localhost, with checked, audited editing")
+    so.add_argument("--port", type=int, default=8765)
+    so.add_argument("--config", default="config")
+    so.add_argument("--out", default="output")
+    so.add_argument("--env-file", default=".env", help="API keys for the Re-run button (default .env)")
     args = ap.parse_args(argv)
 
     if args.cmd == "explain":
         return explain_cmd(args)
     if args.cmd == "access":
         return access_cmd(args)
+    if args.cmd == "studio":
+        from .studio import serve
+        load_env(args.env_file)
+        serve(args.config, args.out, args.port, run=lambda c, camp, out, prov: run(c, camp, out, prov))
+        return 0
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s")
