@@ -11,7 +11,10 @@ import sys
 import time
 from pathlib import Path
 
+import yaml
+
 from .config import load_config, load_env
+from .access import Access, ConfigStore, Forbidden
 from .explain import explain_market, print_explain
 from .pipeline import render_phase, resolve_phase, source_phase, write_market_files
 from .providers import ProviderError, build_providers
@@ -66,6 +69,35 @@ def explain_cmd(args) -> int:
     return 0
 
 
+def access_cmd(args) -> int:
+    access = Access.load(args.config)
+    where = f"{args.path}#{args.section}" if args.section else args.path
+    if args.set is not None or args.delete:
+        if not args.user:
+            raise SystemExit("--as is required to change anything")
+        store = ConfigStore(args.config, access)
+        try:
+            if args.delete:
+                store.delete(args.user, args.path)
+                print(f"deleted {args.path}")
+            else:
+                changed = store.set(args.user, args.path, args.section, yaml.safe_load(args.set))
+                print(f"updated {args.path}: {', '.join(changed) or 'no change'}")
+        except Forbidden as e:
+            print(f"refused: {e}", file=sys.stderr)
+            return 3
+        return 0
+    if args.user:
+        ok = access.can(args.user, args.action, args.path, args.section)
+        print(f"{args.user} {'may' if ok else 'may NOT'} {args.action} {where}")
+        return 0 if ok else 3
+    owners = access.who(args.action, args.path, args.section)
+    print(f"who may {args.action} {where}" + (" (protected section)" if access.is_protected(args.section) else ""))
+    for team, members in owners.items():
+        print(f"  {team:<16}{', '.join(members)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="engines.vanilla", description="Creative automation pipeline (vanilla)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -79,6 +111,14 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--markets", help="comma-separated subset, e.g. jp,mx")
     r.add_argument("--plan-only", action="store_true", help="resolve + legal check only, render nothing")
     r.add_argument("-v", "--verbose", action="store_true")
+    ac = sub.add_parser("access", help="who may do what to a config file (and edit it, checked)")
+    ac.add_argument("path", help="config path, e.g. markets/jp.yaml")
+    ac.add_argument("--section", help="dotted section, e.g. overrides.acme.legal")
+    ac.add_argument("--action", default="update", choices=["read", "create", "update", "delete"])
+    ac.add_argument("--as", dest="user", help="check (or act) as this person")
+    ac.add_argument("--set", help="with --as and --section: write this YAML value")
+    ac.add_argument("--delete", action="store_true", help="with --as: delete the file")
+    ac.add_argument("--config", default="config")
     x = sub.add_parser("explain", help="show which config file set each value for a market")
     x.add_argument("--campaign")
     x.add_argument("--market")
@@ -89,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "explain":
         return explain_cmd(args)
+    if args.cmd == "access":
+        return access_cmd(args)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s")

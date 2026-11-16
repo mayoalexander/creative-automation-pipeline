@@ -54,11 +54,10 @@ def test_partner_switched_off_per_market(cfg):
 
 def test_approvers_route_per_market(cfg):
     camp = cfg.campaigns["spring-launch"]
-    # JP: global + JP-specific approvers; no partner approver because SportCo is off in JP
-    assert resolve_market(cfg, camp, "jp").approvers == ["brand_lead", "jp_marketing", "jp_legal"]
-    # US: global + default regional + partner approver (SportCo is active in the US)
-    assert resolve_market(cfg, camp, "us").approvers == ["brand_lead", "regional_marketing",
-                                                         "sportco_partnerships"]
+    # approvers are team ids. JP: global + JP's teams; no partners team because SportCo is off in JP
+    assert resolve_market(cfg, camp, "jp").approvers == ["brand", "regional-apac", "legal"]
+    # US: global + its regional team + the partners team (SportCo is active in the US)
+    assert resolve_market(cfg, camp, "us").approvers == ["brand", "regional-na", "partnerships"]
 
 
 # ------------------------------------------------------------ checks

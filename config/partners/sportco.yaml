@@ -7,4 +7,4 @@ assets:
 placement: bottom-right
 legal:
   banned_words: [official sponsor]  # partner contract forbids this phrasing
-approvers: [sportco_partnerships]
+approvers: [partnerships]          # a team id from teams.yaml

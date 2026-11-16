@@ -232,6 +232,43 @@ Verified against a live workspace: 4 approval cards × 3 approver tasks, 72 data
 
 ---
 
+## Teams and access control
+
+One module (`engines/vanilla/access.py`) and one file (`config/teams.yaml`) handle multi-team ownership:
+
+- **Teams** list their members; **grants** say which team may `read / create / update / delete` which config
+  file, down to one **section** (`markets/jp.yaml#overrides.acme.legal`).
+- **Protected sections** (legal, compliance) need a grant that names the section: the Japan team edits
+  `markets/jp.yaml`, but not the legal rules inside it.
+- Updates are checked **section by section** and appended to an audit log; a refused edit writes nothing.
+- **Approvers are team ids**, so "who signs off" and "who may edit" come from one list, and `who()` routes a
+  hand-off to the people on the owning team.
+
+```bash
+python -m engines.vanilla access markets/jp.yaml --section overrides.acme.legal          # who may change it
+python -m engines.vanilla access markets/jp.yaml --section overrides.acme.legal --as yuki@example.com   # may NOT
+python -m engines.vanilla access markets/jp.yaml --section overrides.acme.marketing.cta \
+       --as yuki@example.com --set "今すぐチェック"                                          # checked, audited edit
+```
+
+## Stress test
+
+`python scripts/stress.py --scales 4x2,10x4,25x6 --engine vanilla|langgraph` builds a synthetic enterprise from
+the real config and runs the real engine offline (image generation time is modelled at the measured ~6 s/image).
+
+| markets × products | creatives | vanilla | langgraph | peak memory (vanilla / langgraph) |
+|---|---|---|---|---|
+| 4 × 2 | 24 | 5.2 s | 3.3 s | 227 / 565 MB |
+| 10 × 4 | 120 | 22.7 s | 8.3 s | 388 / 820 MB |
+| 25 × 6 | 450 | 82.8 s | 30.4 s | 523 / 1136 MB |
+
+Rendering is linear (~0.19 s/creative sequential, ~0.07 s in parallel). What breaks first at enterprise scale:
+**GenAI time and cost** (one image per market × product, because the prompt carries the market's audience:
+100 × 20 = 2,000 images ≈ 50 min at 4 workers, ~$80), **LangGraph memory** (every item lives in graph state and
+the in-memory checkpointer, roughly doubling vs vanilla), **sequential translation** in the resolve phase, and a
+**budget that is configured but not enforced**. The fixes are known: share hero images across markets with the same
+audience, stream items out of graph state, translate in parallel, and stop the run at `budget_per_month_usd`.
+
 ## Assumptions and limitations
 
 - **Input assets** are local PNGs; storage is the local filesystem. Swapping in S3/Azure/Dropbox means replacing `find_asset` and the output writer.

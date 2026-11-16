@@ -29,9 +29,13 @@ creative_resources:
     text_model: gpt-4o-mini         # translation, openai provider
     budget_per_month_usd: 500
 
+# Approvers are TEAM ids from teams.yaml, so "who signs off" and "who may edit" share one list.
+# `python -m engines.vanilla access who ...` turns a team into the people on it.
 approvers:
-  global: [brand_lead]
-  default: [regional_marketing]
+  global: [brand]
+  default: [ops]
   by_market:
-    jp: [jp_marketing, jp_legal]
-    mx: [mx_marketing]
+    us: [regional-na]
+    mx: [regional-latam]
+    jp: [regional-apac, legal]
+    de: [regional-emea]

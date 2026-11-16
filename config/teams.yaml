@@ -1,0 +1,38 @@
+# Teams, and what each team may do to which config.
+#
+# (Grant key is `to`, not `on`: YAML reads a bare `on` as true.)
+# A resource is a config path, optionally narrowed to one section with '#':
+#   markets/jp.yaml                          the whole file
+#   markets/*.yaml#overrides.*.legal         one section, in every market file
+# Actions: read, create, update, delete. Grants add up; nothing is allowed unless granted.
+#
+# PROTECTED sections can only be changed through a grant that names the section itself.
+# A whole-file grant never reaches them: the Japan team edits markets/jp.yaml, but not the
+# legal rules inside it. (Members are placeholders.)
+
+teams:
+  ops:            { name: Ops / Leadership,  members: [olivia@example.com] }
+  brand:          { name: Brand,             members: [bianca@example.com] }
+  legal:          { name: Legal,             members: [lee@example.com] }
+  partnerships:   { name: Partnerships,      members: [pat@example.com] }
+  channels:       { name: Channels / Media,  members: [cam@example.com] }
+  campaigns:      { name: Campaign managers, members: [carla@example.com] }
+  regional-na:    { name: Regional · NA,     members: [nora@example.com] }
+  regional-latam: { name: Regional · LATAM,  members: [mateo@example.com] }
+  regional-apac:  { name: Regional · APAC,   members: [yuki@example.com] }
+  regional-emea:  { name: Regional · EMEA,   members: [hans@example.com] }
+
+protected: [legal, compliance, "overrides.*.legal", "overrides.*.compliance"]
+
+grants:
+  - { team: "*",            actions: [read],                   to: ["*"] }
+  - { team: ops,            actions: [create, update, delete], to: [org.yaml, teams.yaml, "markets/*.yaml"] }
+  - { team: brand,          actions: [create, update],         to: ["brands/*.yaml"] }
+  - { team: legal,          actions: [update],                 to: ["*#legal", "*#compliance", "markets/*.yaml#overrides.*.legal", "markets/*.yaml#overrides.*.compliance"] }
+  - { team: partnerships,   actions: [create, update, delete], to: ["partners/*.yaml"] }
+  - { team: channels,       actions: [create, update, delete], to: ["channels/*.yaml"] }
+  - { team: campaigns,      actions: [create, update, delete], to: ["campaigns/*.yaml"] }
+  - { team: regional-na,    actions: [update],                 to: [markets/us.yaml] }
+  - { team: regional-latam, actions: [update],                 to: [markets/mx.yaml] }
+  - { team: regional-apac,  actions: [update],                 to: [markets/jp.yaml] }
+  - { team: regional-emea,  actions: [update],                 to: [markets/de.yaml] }
