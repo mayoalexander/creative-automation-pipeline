@@ -4,6 +4,11 @@
 
 A proof of concept that turns **one campaign brief** into **localized, on-brand social ad creatives** for every market, product and aspect ratio, using GenAI only where an asset is missing.
 
+**See it:**
+
+- **[Creative Studio (live, read-only)](https://heyiris.io/s/OrcP2fRi5mbu1HR3PvLDnPta4vXDMtMLmesUfMEl)**: every campaign, market, creative and approval from the last real run, plus the configuration and who owns each part.
+- **Edit it yourself:** `python -m engines.vanilla studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
+
 The same workflow is built **three ways**, against **one shared contract** (same config in, same files out, checked by the same tests):
 
 | Engine | What it shows | Run it |
