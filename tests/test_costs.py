@@ -89,3 +89,17 @@ def test_forecast_projects_the_month_and_the_day_it_hits_the_budget():
     assert forecast(lines, "2026-02", 50, date(2026, 2, 10))["hits_budget_on"] is None
     past = forecast(lines, "2026-02", 50, date(2026, 3, 15))                                  # a finished month
     assert past["projected_usd"] == 10 and past["days_elapsed"] == 28
+
+
+def test_a_budget_edit_that_is_not_a_number_is_rolled_back(tmp_path):
+    """`set org.yaml budget.per_campaign_usd "{spring-launch: 2}"` is a map; a word where a number goes is refused."""
+    import shutil
+    from engines.vanilla.cli import main
+    from engines.vanilla.ops import coerce
+    shutil.copytree(Path(__file__).resolve().parent.parent / "config", tmp_path / "config")
+    cfg = ["--config", str(tmp_path / "config"), "--as", "fiona@example.com"]
+    assert coerce("{spring-launch: 2}") == {"spring-launch": 2} and coerce("Note: text") == "Note: text"
+    assert main(["set", "org.yaml", "budget.per_campaign_usd", "{spring-launch: 2}"] + cfg) == 0
+    before = (tmp_path / "config/org.yaml").read_text()
+    assert main(["set", "org.yaml", "budget.monthly_usd", "lots"] + cfg) == 2           # refused, file unchanged
+    assert (tmp_path / "config/org.yaml").read_text() == before

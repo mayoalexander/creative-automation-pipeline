@@ -80,7 +80,9 @@ def _report(ctx: Context, campaign: str, name: str):
 
 def _validate(ctx: Context) -> None:
     """A config every campaign can still use: it loads, and every market of every campaign resolves."""
+    from .costs import budget
     cfg = load_config(ctx.config_dir)
+    budget(cfg)                                              # caps must be numbers, maps of numbers
     for c in cfg.campaigns.values():
         cfg.creative_types(c)
         for m in c["markets"]:
@@ -297,6 +299,8 @@ def coerce(raw: str) -> Any:
     """A CLI value as YAML (so lists, numbers and booleans work), falling back to the plain string."""
     try:
         v = yaml.safe_load(raw)
-        return raw if isinstance(v, dict) else v           # 'a: b' in a sentence is text, not a map
+        if isinstance(v, dict) and not raw.lstrip().startswith("{"):
+            return raw                                       # 'a: b' in a sentence is text; {a: b} is a map
+        return v
     except yaml.YAMLError:
         return raw

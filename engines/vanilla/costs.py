@@ -68,9 +68,20 @@ def record(config_dir, cfg, campaign_id: str, user: str | None, provider: str, s
 
 # ───────────────────────────────────────────────────────────── budget, estimate, check
 def budget(cfg) -> dict:
+    """org.yaml#budget, checked: caps are numbers (or absent), the per-* caps are maps of id -> number."""
     b = cfg.org.get("budget") or {}
-    return {"monthly_usd": b.get("monthly_usd"), "per_campaign_usd": dict(b.get("per_campaign_usd") or {}),
-            "per_market_usd": dict(b.get("per_market_usd") or {}), "when_over": b.get("when_over", "block")}
+    out = {"monthly_usd": b.get("monthly_usd"), "per_campaign_usd": b.get("per_campaign_usd") or {},
+           "per_market_usd": b.get("per_market_usd") or {}, "when_over": b.get("when_over", "block")}
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+    if out["monthly_usd"] is not None and not num(out["monthly_usd"]):
+        raise ValueError(f"budget.monthly_usd must be a number of dollars, not {out['monthly_usd']!r}")
+    for k in ("per_campaign_usd", "per_market_usd"):
+        if not isinstance(out[k], dict) or not all(num(v) for v in out[k].values()):
+            raise ValueError(f"budget.{k} must be a map like {{spring-launch: 50}}, not {out[k]!r}")
+        out[k] = dict(out[k])
+    if out["when_over"] not in ("block", "warn"):
+        raise ValueError(f"budget.when_over must be block or warn, not {out['when_over']!r}")
+    return out
 
 
 def _month(lines: list[dict], month: str) -> list[dict]:
