@@ -21,12 +21,15 @@ teams:
   regional-latam: {name: Regional · LATAM, members: [mateo@example.com]}
   regional-apac: {name: Regional · APAC, members: [yuki@example.com]}
   regional-emea: {name: Regional · EMEA, members: [hans@example.com]}
+  finance: {name: Finance, members: [fiona@example.com]}
 
-protected: [legal, compliance, "overrides.*.legal", "overrides.*.compliance"]
+protected: [legal, compliance, "overrides.*.legal", "overrides.*.compliance", budget]
 
 grants:
   - {team: "*", actions: [read], to: ["*"]}
   - {team: ops, actions: [create, update, delete], to: [org.yaml, teams.yaml, "markets/*.yaml"]}
+  - {team: ops, actions: [update], to: ["org.yaml#budget"]}
+  - {team: finance, actions: [update], to: ["org.yaml#budget"]}
   - {team: brand, actions: [create, update], to: ["brands/*.yaml", creative_standards.yaml]}
   - {team: legal, actions: [update], to: ["*#legal", "*#compliance", "markets/*.yaml#overrides.*.legal", "markets/*.yaml#overrides.*.compliance"]}
   - {team: partnerships, actions: [create, update, delete], to: ["partners/*.yaml"]}

@@ -41,6 +41,7 @@
     creatives: I('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>'),
     pipeline: I('<circle cx="5" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 6h4a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M7 18h4a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/>'),
     approvals: I('<path d="M9 12l2 2 4-4"/><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'),
+    costs: I('<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     config: I('<path d="M4 7h10M4 17h6M14 7a3 3 0 1 0 6 0 3 3 0 1 0-6 0M10 17a3 3 0 1 0 6 0 3 3 0 1 0-6 0M20 17h-4"/>'),
   };
 
@@ -102,7 +103,7 @@
       ['teams', 'Teams & access', Object.keys(D.teams).length], ['org', 'Org settings', '']];
     var link = function (href, on, icon, label, ct) { return '<a href="' + href + '"' + (on ? ' aria-current="page"' : '') + '>' + icon + esc(label) + (ct !== '' ? '<span class="ct">' + esc(ct) + '</span>' : '') + '</a>' };
     $('#cs-nav').innerHTML = '<div class="lbl">' + esc(c.name) + '</div>' + items.map(function (it) { return link('#/' + it[0], route === it[0], IC[it[0]], it[1], it[2]) }).join('') +
-      '<div class="lbl">Configuration</div>' + cfgItems.map(function (it) { return link('#/config/' + it[0], route === 'config/' + it[0], IC.config, it[1], it[2]) }).join('') +
+      '<div class="lbl">Configuration</div>' + (D.costs ? link('#/costs', route === 'costs', IC.costs, 'Costs & budget', '$' + Number(D.costs.forecast.month_to_date_usd).toFixed(0)) : '') + cfgItems.map(function (it) { return link('#/config/' + it[0], route === 'config/' + it[0], IC.config, it[1], it[2]) }).join('') +
       '<div class="foot">Every number and image is real pipeline output.</div>';
     var src = $('#cs-src'); src.className = 'pill' + (SOURCE === 'live' || EDIT ? ' live' : ''); src.lastElementChild.textContent = EDIT ? 'LIVE · LOCAL CONFIG' : SOURCE === 'live' ? 'LIVE DATASET' : 'SNAPSHOT · LAST RUN';
     $('#cs-repo').href = D.repo;
@@ -275,6 +276,37 @@
       '<div class="card" style="margin-top:14px"><div class="ch"><h2>Recent changes</h2><span class="sp tag">audit.jsonl · every saved edit</span></div>' + ((D.audit || []).length ? '<div class="tx"><table><thead><tr><th>When</th><th>Who</th><th>File</th><th>Sections</th></tr></thead><tbody>' +
         D.audit.slice().reverse().map(function (a) { return '<tr><td class="mono"><small>' + esc(a.at.replace('T', ' ')) + '</small></td><td>' + esc(a.user) + '</td><td class="mono">' + esc(a.path) + '</td><td class="mono"><small>' + esc((a.sections || [a.action]).join(', ')) + '</small></td></tr>' }).join('') + '</tbody></table></div>'
         : '<div class="cb"><span class="tag">no edits yet</span></div>') + '</div>';
+  };
+  /* ── Costs & budget: spend.jsonl (every image every run sourced) against org.yaml#budget ── */
+  var usd = function (v) { return v == null ? '—' : '$' + Number(v).toFixed(2) };
+  V.costs = function () {
+    var K = D.costs;
+    if (!K) return head('Configuration', 'Costs & budget', 'No spend data in this build.');
+    var F = K.forecast, t = K.totals, b = F.budget_usd, lock = ((D.config.org.org.protected || []).filter(function (l) { return l.section === 'budget' })[0] || { editors: { ops: [] } });
+    var owners = Object.keys(lock.editors).map(team).join(', ');
+    var tone = F.status === 'over' ? 'bad' : F.status === 'will exceed' ? 'warn' : 'ok';
+    var pct = function (v) { return b ? Math.min(100, Math.max(0, v / b * 100)) : 0 };
+    var group = function (title, key, rows) {
+      return '<div class="card"><div class="ch"><h2>' + title + '</h2><span class="sp tag">' + rows.length + '</span></div>' + (rows.length ? '<div class="tx"><table><thead><tr><th>' + key + '</th><th>New</th><th>Reused</th><th>Spent</th></tr></thead><tbody>' +
+        rows.map(function (r) { return '<tr><td class="mono"><small>' + esc(r[key === 'Person' ? 'user' : key.toLowerCase()]) + '</small></td><td class="mono">' + r.generated + '</td><td class="mono">' + r.cached + '</td><td class="mono"><b>' + usd(r.cost_usd) + '</b></td></tr>' }).join('') + '</tbody></table></div>' : '<div class="cb"><span class="tag">no spend this month</span></div>') + '</div>' };
+    return head('Configuration', 'Costs & budget', 'Every image a run sources is written to <span class="mono">spend.jsonl</span>: who ran it, which model, cached or new, and what it cost. Runs that would go over a cap in <span class="mono">org.yaml#budget</span> are refused before anything is generated' + (K.when_over === 'warn' ? ' (set to warn, so they run with a warning)' : '') + '.',
+        '<span class="tag">' + esc(K.month) + ' · ' + esc(usd(K.image_cost_usd)) + ' per new image</span>') +
+      '<div class="grid g4">' +
+      kpi('dollar', 'pri', 'Month to date', usd(F.month_to_date_usd), b != null ? 'of ' + usd(b) + ' budget' : 'no monthly budget set', 'Image generation spend this calendar month, from spend.jsonl') +
+      kpi('hourglass', tone === 'ok' ? 'ok' : 'bad', 'Budget left', usd(F.remaining_usd), F.status, 'Monthly budget minus spend so far') +
+      kpi('timer', 'pri', 'Projected month-end', usd(F.projected_usd), usd(F.daily_rate_usd) + ' a day · day ' + F.days_elapsed + ' of ' + F.days_in_month, 'Spend so far plus the daily rate for the days left') +
+      kpi('check', 'ok', 'Saved by the cache', usd(t.cache_savings_usd), t.cached + ' reused · ' + t.generated + ' generated', 'Images reused from earlier runs instead of paid for again') + '</div>' +
+      '<div class="card costs" style="margin-top:14px"><div class="ch"><h2>Forecast</h2><span class="st ' + tone + '">' + esc(F.status) + '</span><span class="sp tag">org.yaml#budget · locked · ' + esc(owners) + '</span></div><div class="cb">' +
+        (b ? '<div class="meter" role="img" aria-label="' + esc(usd(F.month_to_date_usd) + ' spent, ' + usd(F.projected_usd) + ' projected, of ' + usd(b)) + '"><span class="proj" style="width:' + pct(F.projected_usd) + '%"></span><span class="mtd ' + tone + '" style="width:' + pct(F.month_to_date_usd) + '%"></span></div>' +
+          '<div class="mleg"><span><i class="mtd ' + tone + '"></i>spent ' + esc(usd(F.month_to_date_usd)) + '</span><span><i class="proj"></i>projected ' + esc(usd(F.projected_usd)) + '</span><span>budget ' + esc(usd(b)) + '</span></div>' : '') +
+        '<dl class="kv" style="margin-top:14px"><dt>Daily rate</dt><dd class="mono">' + esc(usd(F.daily_rate_usd)) + '</dd><dt>Reaches budget</dt><dd>' + esc(F.hits_budget_on || 'not this month, at this rate') + '</dd>' +
+        '<dt>Caps</dt><dd>' + (K.caps.length ? K.caps.map(function (c) { return '<span class="tag" style="margin:0 4px 4px 0">' + esc(c.scope + ' ' + c.name + ': ' + usd(c.spent_usd) + ' of ' + usd(c.cap_usd)) + '</span>' }).join('') : '<span class="tag">none</span>') + '</dd>' +
+        '<dt>When over</dt><dd>' + (K.when_over === 'warn' ? 'run, with a warning' : 'refuse the run; only ' + esc(owners) + ' may override') + '</dd>' +
+        '<dt>Check first</dt><dd class="mono"><small>creative-kit estimate ' + esc(S.camp) + '</small></dd></dl></div></div>' +
+      '<div class="grid g3" style="margin-top:14px">' + group('By campaign', 'Campaign', K.by_campaign) + group('By market', 'Market', K.by_market) + group('By model', 'Model', K.by_model) + '</div>' +
+      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Recent runs</h2><span class="sp tag">spend.jsonl · ' + esc(K.month) + '</span></div>' + (K.recent_runs.length ? '<div class="tx"><table><thead><tr><th>When</th><th>Campaign</th><th>Who</th><th>Provider</th><th>Markets</th><th>New</th><th>Images</th><th>Cost</th></tr></thead><tbody>' +
+        K.recent_runs.map(function (r) { return '<tr><td class="mono"><small>' + esc(r.at.replace('T', ' ')) + '</small></td><td>' + esc(r.campaign) + '</td><td><small>' + esc(r.user) + '</small>' + (r.source === 'backfill' ? ' <span class="tag">backfill</span>' : '') + '</td><td class="mono"><small>' + esc(r.provider) + '</small></td><td class="mono"><small>' + esc(r.markets.join(', ').toUpperCase()) + '</small></td><td class="mono">' + r.generated + '</td><td class="mono">' + r.images + '</td><td class="mono"><b>' + usd(r.cost_usd) + '</b></td></tr>' }).join('') + '</tbody></table></div>'
+        : '<div class="cb"><span class="tag">no runs this month</span></div>') + '</div>';
   };
   V.pipeline = function () {
     var box = function (x, y, w, h, t, s, c) { return '<rect class="box" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="10"' + (c ? ' style="stroke:' + c + '"' : '') + '/><text x="' + (x + 12) + '" y="' + (y + 22) + '">' + t + '</text>' + (s ? '<text class="s" x="' + (x + 12) + '" y="' + (y + 40) + '">' + s + '</text>' : '') };

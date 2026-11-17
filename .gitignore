@@ -7,3 +7,4 @@ assets/generated/
 .DS_Store
 audit.jsonl
 *.egg-info/
+spend.jsonl

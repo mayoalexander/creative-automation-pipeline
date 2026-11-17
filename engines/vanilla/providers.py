@@ -149,7 +149,9 @@ class ChainImageProvider:
         errors = []
         for p in self.providers:
             try:
-                return p.generate(prompt, product)
+                img = p.generate(prompt, product)
+                self.used = getattr(p, "label", p.name)       # which model was paid for (the ledger records it)
+                return img
             except ProviderError as e:
                 errors.append(f"{getattr(p, 'label', p.name)}: {e}")
         raise ProviderError(" | ".join(errors))
@@ -200,17 +202,19 @@ class OpenRouterTranslator(OpenAITranslator):
     key_env = "OPENROUTER_API_KEY"
 
 
-def build_providers(kind: str, genai_cfg: dict):
+def build_providers(kind: str, genai_cfg: dict, api_key: str | None = None):
+    """The image provider and translator for a kind. api_key overrides the environment's (estimates pass a
+    placeholder: they only need the provider's name, which is the cache identity, and never call it)."""
     if kind == "mock":
         return MockImageProvider(), MockTranslator()
     if kind == "openai":
         return (
-            OpenAIImageProvider(genai_cfg.get("image_model", "gpt-image-1")),
-            OpenAITranslator(genai_cfg.get("text_model", "gpt-4o-mini")),
+            OpenAIImageProvider(genai_cfg.get("image_model", "gpt-image-1"), api_key=api_key),
+            OpenAITranslator(genai_cfg.get("text_model", "gpt-4o-mini"), api_key=api_key),
         )
     if kind == "openrouter":
         return (
-            OpenRouterImageProvider(genai_cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image")),
-            OpenRouterTranslator(genai_cfg.get("openrouter_text_model", "google/gemini-2.5-flash")),
+            OpenRouterImageProvider(genai_cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"), api_key=api_key),
+            OpenRouterTranslator(genai_cfg.get("openrouter_text_model", "google/gemini-2.5-flash"), api_key=api_key),
         )
     raise ValueError(f"unknown provider '{kind}' (use openai, openrouter or mock)")

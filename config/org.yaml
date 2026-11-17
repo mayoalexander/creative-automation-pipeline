@@ -27,7 +27,14 @@ creative_resources:
     image_model: gpt-image-1        # used by the openai provider
     image_cost_usd: 0.04            # per generated image, for the cost estimate
     text_model: gpt-4o-mini         # translation, openai provider
-    budget_per_month_usd: 500
+
+# What generated images may cost, per calendar month (USD). A locked section: only Ops and Finance
+# change it (teams.yaml). `creative-kit estimate` shows what a run would add; `run` checks it first.
+budget:
+  monthly_usd: 500                  # the whole org
+  per_campaign_usd: {}              # optional caps, e.g. {spring-launch: 50}
+  per_market_usd: {}                # optional caps, e.g. {jp: 100}
+  when_over: block                  # block: refuse the run | warn: run it and log a warning
 
 # Approvers are TEAM ids from teams.yaml, so "who signs off" and "who may edit" share one list.
 # `python -m engines.vanilla access who ...` turns a team into the people on it.

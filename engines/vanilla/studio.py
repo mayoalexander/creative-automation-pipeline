@@ -97,6 +97,8 @@ def snapshot(config_dir: str | Path, out_root: str | Path,
                    "grants": [{"team": g.team, "actions": list(g.actions), "file": g.file, "section": g.section} for g in access.grants]})
     genai = cfg.org["creative_resources"]["genai"]
     audit = config_dir.parent / "audit.jsonl"
+    from .costs import budget, forecast, read_ledger, summarize
+    spend, today = read_ledger(config_dir), __import__("datetime").date.today()
     return {
         "generated_from": "live config + output/vanilla (creative-kit studio)",
         "repo": "https://github.com/mayoalexander/creative-automation-pipeline",
@@ -107,6 +109,7 @@ def snapshot(config_dir: str | Path, out_root: str | Path,
                           "rules": v.get("rules", {}), "source": v.get("source"), "models": v.get("models", [])}
                       for k, v in cfg.standards.get("types", {}).items()},
         "teams": {k: {"name": v["name"], "members": v.get("members", [])} for k, v in access.teams.items()},
+        "costs": {**summarize(cfg, spend), "forecast": forecast(spend, today.strftime("%Y-%m"), budget(cfg)["monthly_usd"], today)},
         "audit": [json.loads(l) for l in audit.read_text().splitlines()[-25:]] if audit.exists() else [],
     }
 

@@ -23,7 +23,8 @@ from pathlib import Path
 import yaml
 
 from .config import load_config, load_env
-from .access import Forbidden
+from . import costs
+from .access import Access, Forbidden
 from .explain import pad, print_explain, width
 from .pipeline import render_phase, resolve_phase, source_phase, write_market_files
 from .providers import ProviderError, build_providers
@@ -33,7 +34,8 @@ ENGINE = "vanilla"
 
 
 def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
-        markets: list[str] | None = None, plan_only: bool = False, engine: str = ENGINE) -> dict:
+        markets: list[str] | None = None, plan_only: bool = False, engine: str = ENGINE,
+        user: str | None = None, allow_over_budget: bool = False) -> dict:
     t0 = time.time()
     cfg = load_config(config_dir)
     if campaign_id not in cfg.campaigns:
@@ -51,7 +53,17 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
 
     selected = markets or campaign["markets"]
     plans = resolve_phase(cfg, campaign, selected, translator)
-    sources = {} if plan_only else source_phase(cfg, campaign, plans, image_provider)
+    sources = {}
+    if not plan_only:                    # check the budget before anything is paid for, record what was
+        est = costs.estimate(cfg, campaign, plans, image_provider, costs.read_ledger(config_dir))
+        try:
+            costs.check(est, Access.load(config_dir), user, allow_over_budget)
+        except Forbidden:
+            logging.getLogger().removeHandler(fh)
+            raise
+        sources = source_phase(cfg, campaign, plans, image_provider)
+        costs.record(config_dir, cfg, campaign_id, user or os.environ.get("PIPELINE_USER"), image_provider.name, sources,
+                     override=allow_over_budget and not est["fits"])
     items = render_phase(cfg, campaign, plans, sources, out) if not plan_only else []
     write_market_files(plans, out)
     report = build_report(engine, cfg, campaign, plans, sources, items, time.time() - t0, image_provider.name)
@@ -108,6 +120,45 @@ def show(name: str, result, args) -> int:
         print_report(report)
         t = report["totals"]
         return 1 if (t["errors"] or t["built"] and t["brand_checks_passed"] < t["built"]) else 0
+    elif name == "estimate":
+        r, i = result, result["images"]
+        print(f"{r['campaign']} with {r['provider']}  ·  {i['new']} new, {i['cached']} from the cache, {i['supplied']} supplied"
+              f"  ·  ${r['cost_usd']:.2f} at ${r['image_cost_usd']:.2f}/image"
+              + (f"  ·  legally blocked (no images): {', '.join(r['blocked_markets'])}" if r["blocked_markets"] else "") + "\n")
+        table([{"market": m, **v, "cost_usd": f"${v['cost_usd']:.2f}"} for m, v in r["by_market"].items()],
+              ["market", "new", "cached", "supplied", "cost_usd"])
+        print()
+        table([{"cap": f"{c['scope']} {c['name']}", "cap_usd": f"${c['cap_usd']:.2f}", "spent": f"${c['spent_usd']:.2f}",
+                "after_run": f"${c['after_usd']:.2f}", "fits": "yes" if c["fits"] else "NO"} for c in r["caps"]],
+              ["cap", "cap_usd", "spent", "after_run", "fits"])
+        print("\nfits every cap" if r["fits"] else f"\nover budget ({r['when_over']}): " + "; ".join(r["over"])
+              + f"  (ask: {', '.join(r['ask'])})")
+        return 0 if r["fits"] else 4
+    elif name == "costs":
+        t, usd = result["totals"], lambda v: f"${v:.2f}"
+        print(f"{result['month']}" + (f"  ·  {result['campaign']}" if result["campaign"] else "") +
+              f"  ·  spent {usd(t['cost_usd'])} on {t['generated']} generated images  ·  {t['cached']} reused"
+              f"  ·  cache saved {usd(t['cache_savings_usd'])}")
+        if result["caps"]:
+            print()
+            table([{"cap": f"{c['scope']} {c['name']}", "spent": usd(c["spent_usd"]), "of": usd(c["cap_usd"]),
+                    "left": usd(c["cap_usd"] - c["spent_usd"])} for c in result["caps"]], ["cap", "spent", "of", "left"])
+        for key in ("campaign", "market", "model", "user"):
+            rows = result["by_person" if key == "user" else f"by_{key}"]
+            if rows:
+                print()
+                table([{**r, "cost_usd": usd(r["cost_usd"])} for r in rows], [key, "generated", "cached", "cost_usd"])
+        if result["recent_runs"]:
+            print()
+            table([{**r, "cost_usd": usd(r["cost_usd"])} for r in result["recent_runs"]],
+                  ["at", "campaign", "user", "provider", "generated", "images", "cost_usd"])
+    elif name == "forecast":
+        f, usd = result, lambda v: "none" if v is None else f"${v:.2f}"
+        print(f"{f['month']}  ·  day {f['days_elapsed']} of {f['days_in_month']}  ·  {f['status']}\n")
+        for label, v in (("month to date", usd(f["month_to_date_usd"])), ("daily rate", usd(f["daily_rate_usd"])),
+                         ("projected", usd(f["projected_usd"])), ("budget", usd(f["budget_usd"])),
+                         ("left", usd(f["remaining_usd"])), ("reaches budget", f["hits_budget_on"] or "not this month")):
+            print(f"  {label:<16}{v}")
     elif name == "snapshot":
         print(f"{len(result['campaigns'])} campaigns · {len(result['markets'])} markets · {len(result['deliverables'])} deliverables"
               f" · {sum(len(v) for k, v in result['config'].items() if isinstance(v, dict))} config files  (--json for all of it)")
@@ -134,7 +185,7 @@ def show_help(h: dict) -> None:
     bare = positional(OPS[h["name"]])
     for k, a in h["arguments"].items():
         label = k.upper() if k in bare else f"--{k.replace('_', '-')}"
-        print(f"  {label:<16}{a['type']:<6}" + ("required" if a["required"] else f"default {a['default']!r}"))
+        print(f"  {label:<20}{a['type']:<6}" + ("required" if a["required"] else f"default {a['default']!r}"))
     if not h["arguments"]:
         print("  none")
     if h.get("value"):
@@ -229,7 +280,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = o(context_from_env(args.config, args.out, user), **kw)
     except Forbidden as e:
-        print(f"refused: {e}" + ("  (use --as <a team member>)" if "(local)" in user else ""), file=sys.stderr)
+        print(f"refused: {e}" + ("  (use --as <a team member>)" if "(local)" in user and not isinstance(e, costs.OverBudget) else ""),
+              file=sys.stderr)
         return 3
     except ProviderError as e:
         print(f"error: {e}", file=sys.stderr)

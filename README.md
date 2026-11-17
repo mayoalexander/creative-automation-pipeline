@@ -312,7 +312,9 @@ The pipeline is headless. Every operation is declared once in [`engines/vanilla/
 | `who`, `can` | read | which teams may change a file or section; whether a person may |
 | `config_get`, `snapshot` | read | one config file with its owners; everything the Studio shows |
 | `config_set` | write | change one value: checked against `teams.yaml`, audited, undone if it breaks the config |
-| `run` | write | run a campaign (`provider=mock` is free; cached images cost $0) |
+| `estimate` | read | what a run would cost before it runs: new vs cached images, against every budget cap |
+| `costs`, `forecast` | read | spend this month by campaign, market, model, person and day; projected month-end |
+| `run` | write | run a campaign (`provider=mock` is free; cached images cost $0); refused if over budget |
 
 Same question, same answer, through any door (a test checks this):
 
@@ -351,7 +353,7 @@ copy would put them behind single sign-on and map each person's token to their `
 | The customer's team | Owns | Uses |
 |---|---|---|
 | Brand, Legal, Regional, Partnerships, Channels, Campaigns | their own YAML files (`teams.yaml` says which) | the Studio, or `creative-kit set … --as them` |
-| Ops / leadership | `org.yaml`: regions, velocity target, budget, approvers | `creative-kit report`, the Studio overview |
+| Ops / leadership | `org.yaml`: regions, velocity target, budget (with Finance), approvers | `creative-kit report`, the Studio overview |
 | Their engineers | nothing new: it's config + a CLI | `creative-kit` in CI, `POST /api/<operation>` from their tools |
 | Their agents | nothing new | `creative-kit mcp`: the same operations as tools |
 
@@ -418,6 +420,28 @@ The same dashboard as the hosted page, built from the live config and the last r
 Standard library HTTP on `127.0.0.1` only: it is a local tool with no login. "Acting as" is a picker, not
 authentication; a hosted version would take the user from SSO and keep the same checks.
 
+## Cost and budget controls
+
+Every image a run sources is written to `spend.jsonl` (next to `config/`, not in git): who ran it, which
+campaign, market and model, whether it came from the cache, and what it cost. The mock and cached images cost $0.
+The budget lives in `org.yaml#budget`: a monthly cap for the org, optional caps per campaign and per market, and
+what to do when a run would go over (`block` or `warn`). It is a locked section: only Ops and Finance may change it.
+
+```bash
+creative-kit estimate spring-launch                      # new vs cached images, the cost, and whether it fits
+creative-kit run spring-launch --as carla@example.com    # checks the same estimate first; over a cap, it is refused
+creative-kit costs                                       # this month: by campaign, market, model, person, recent runs
+creative-kit forecast                                    # daily rate, projected month-end, the day it hits the budget
+creative-kit set org.yaml budget.per_campaign_usd.spring-launch 50 --as olivia@example.com
+```
+
+A refused run generates nothing and names the cap and its owners:
+`over budget: would take spring-launch to $52.00 of its $50.00 cap (ask: ops, finance, who own org.yaml#budget)`.
+Ops or Finance can push one run through with `--allow-over-budget`; anyone else is refused. `estimate` exits 4
+when a run would not fit, so a script can stop on it. API and MCP callers go through the same check, and the
+Studio's *Costs & budget* page shows the same numbers. `python -m engines.vanilla.costs backfill` seeds the
+ledger once from the image cache (`assets/generated`); those lines are marked `"source": "backfill"`.
+
 ## Stress test
 
 `python scripts/stress.py --scales 4x2,10x4,25x6 --engine vanilla|langgraph` builds a synthetic enterprise from
@@ -431,10 +455,10 @@ the real config and runs the real engine offline (image generation time is model
 
 Rendering is linear (~0.19 s/creative sequential, ~0.07 s in parallel). What breaks first at enterprise scale:
 **GenAI time and cost** (one image per market × product, because the prompt carries the market's audience:
-100 × 20 = 2,000 images ≈ 50 min at 4 workers, ~$80), **LangGraph memory** (every item lives in graph state and
-the in-memory checkpointer, roughly doubling vs vanilla), **sequential translation** in the resolve phase, and a
-**budget that is configured but not enforced**. The fixes are known: share hero images across markets with the same
-audience, stream items out of graph state, translate in parallel, and stop the run at `budget_per_month_usd`.
+100 × 20 = 2,000 images ≈ 50 min at 4 workers, ~$80; the budget caps now stop a run before it overspends),
+**LangGraph memory** (every item lives in graph state and the in-memory checkpointer, roughly doubling vs vanilla)
+and **sequential translation** in the resolve phase. The fixes are known: share hero images across markets with
+the same audience, stream items out of graph state, and translate in parallel.
 
 ## Assumptions and limitations
 

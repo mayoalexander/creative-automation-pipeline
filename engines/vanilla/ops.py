@@ -217,6 +217,43 @@ def snapshot(ctx: Context) -> dict:
     return build(ctx.config_dir, ctx.out_root)
 
 
+@op(examples=[{"campaign": "spring-launch"}, {"campaign": "summer-promo", "markets": "us", "provider": "openrouter"}])
+def estimate(ctx: Context, campaign: str, markets: str = "", provider: str = "") -> dict:
+    """What a run would cost before it runs: images newly generated vs reused from the cache, x the image price,
+    against this month's spend and every budget cap. Generates nothing; provider=mock is always $0."""
+    from .costs import BUDGET, estimate as est, read_ledger
+    from .pipeline import resolve_phase
+    from .providers import MockTranslator, build_providers
+    cfg = load_config(ctx.config_dir)
+    if campaign not in cfg.campaigns:
+        raise KeyError(f"no campaign '{campaign}'. Campaigns: {', '.join(cfg.campaigns)}")
+    genai = cfg.org.get("creative_resources", {}).get("genai", {})
+    image, _ = build_providers(provider or genai.get("image_provider", "mock"), genai, api_key="estimate-only")
+    c = cfg.campaigns[campaign]
+    plans = resolve_phase(cfg, c, markets.split(",") if markets else c["markets"], MockTranslator())   # no paid translation
+    r = est(cfg, c, plans, image, read_ledger(ctx.config_dir))
+    return {**r, **({"ask": list(Access.load(ctx.config_dir).who("update", *BUDGET))} if not r["fits"] else {})}
+
+
+@op(examples=[{}, {"campaign": "spring-launch"}])
+def costs(ctx: Context, campaign: str = "", month: str = "") -> dict:
+    """Image spend for a month (default this one): totals, cache savings, the budget caps, and spend by campaign,
+    market, model, person and day, plus the recent runs. From spend.jsonl, which every run writes."""
+    from .costs import read_ledger, summarize
+    return summarize(load_config(ctx.config_dir), read_ledger(ctx.config_dir), month, campaign)
+
+
+@op(examples=[{}, {"month": "2026-11"}])
+def forecast(ctx: Context, month: str = "") -> dict:
+    """Where this month's image spend is heading: month-to-date, daily run rate, projected month-end, the org
+    budget, and the date spend would reach it at the current rate (none if it won't)."""
+    import datetime
+    from .costs import budget, forecast as fc, read_ledger
+    cfg = load_config(ctx.config_dir)
+    return fc(read_ledger(ctx.config_dir), month or datetime.date.today().strftime("%Y-%m"), budget(cfg)["monthly_usd"],
+              datetime.date.today())
+
+
 # ─────────────────────────────────────────────────────────────── write
 @op(write=True, examples=[{"path": "markets/jp.yaml", "section": "overrides.acme.marketing.cta", "value": "今すぐチェック"}], cli="set")
 def config_set(ctx: Context, path: str, section: str, value: Any) -> dict:
@@ -237,12 +274,15 @@ def config_set(ctx: Context, path: str, section: str, value: Any) -> dict:
 
 
 @op(write=True, examples=[{"campaign": "spring-launch", "provider": "mock", "markets": "jp"}])
-def run(ctx: Context, campaign: str, provider: str = "", markets: str = "", plan_only: bool = False) -> dict:
+def run(ctx: Context, campaign: str, provider: str = "", markets: str = "", plan_only: bool = False,
+        allow_over_budget: bool = False) -> dict:
     """Run a campaign: resolve, legal check, source images, render, brand-check, report.
-    provider=mock costs nothing; cached images are reused at $0. markets is a comma list, e.g. jp,mx."""
+    provider=mock costs nothing; cached images are reused at $0. markets is a comma list, e.g. jp,mx.
+    A run that would go over a budget cap (org.yaml#budget) is refused unless allow_over_budget is set
+    by someone who may change the budget (Ops, Finance). Every image sourced is recorded in spend.jsonl."""
     from .cli import run as engine_run
     r = engine_run(str(ctx.config_dir), campaign, str(ctx.out_root), provider or None,
-                   markets.split(",") if markets else None, plan_only)
+                   markets.split(",") if markets else None, plan_only, user=ctx.user, allow_over_budget=allow_over_budget)
     return {"campaign": campaign, "provider": r["provider"], "totals": r["totals"], "efficiency": r["efficiency"],
             "markets": {m: {k: v for k, v in x.items() if k in ("built", "blocked", "legal_findings", "message")}
                         for m, x in r["markets"].items()},

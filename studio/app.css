@@ -215,3 +215,13 @@ html.dark .cs,:root[data-theme="dark"] .cs{--bg:#0b0b0c;--panel:#141416;--soft:#
 .cs .toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}.cs .toast.bad{background:var(--badc);color:#fff}
 .cs .toast a{color:inherit;text-decoration:underline}
 @media (max-width:700px){.cs .as span{display:none}.cs .as select{max-width:150px}}
+/* costs: spend so far over the projected month-end, against the budget (the bar's full width) */
+.cs .meter{position:relative;height:12px;border-radius:6px;background:var(--soft);overflow:hidden}
+.cs .meter span{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+.cs .meter .proj,.cs .mleg i.proj{background:var(--line)}
+.cs .meter .mtd,.cs .mleg i.mtd{background:var(--okc)}.cs .meter .mtd.warn,.cs .mleg i.mtd.warn{background:var(--warnc)}.cs .meter .mtd.bad,.cs .mleg i.mtd.bad{background:var(--badc)}
+.cs .mleg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font:500 12px/1.4 var(--mono);color:var(--sub)}
+.cs .mleg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.cs .mleg span:last-child{margin-left:auto}
+.cs .costs .ch .tag,.cs .costs .kv .tag{white-space:normal;word-break:break-word;line-height:1.3}
+.cs .costs .kv dd{min-width:0;word-break:break-word}

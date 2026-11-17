@@ -104,9 +104,10 @@ def find_asset(root: Path, product_id: str, market_id: str) -> tuple[Path | None
     return None, "missing"
 
 
-def source_one(root: Path, product: dict, ctx: MarketContext, provider, standards: dict,
-               creative: str = "product") -> dict:
-    """Reuse or generate the image for one (market, product, creative type)."""
+def plan_source(root: Path, product: dict, ctx: MarketContext, provider, standards: dict,
+                creative: str = "product") -> dict:
+    """What sourcing one (market, product, creative type) would do, without doing it: reuse a supplied
+    asset, reuse an image generated on an earlier run (the cache), or generate. Estimates use this too."""
     if standards["types"][creative].get("source", "reuse_or_generate") == "reuse_or_generate":
         path, kind = find_asset(root, product["id"], ctx.id)
         if path:
@@ -114,14 +115,22 @@ def source_one(root: Path, product: dict, ctx: MarketContext, provider, standard
     prompt = build_prompt(product, ctx, standards, creative)
     key = hashlib.sha1(f"{provider.name}|{prompt}".encode()).hexdigest()[:10]
     cached = root / f"assets/generated/{product['id']}/{creative}/{ctx.id}-{key}.png"
-    if cached.exists():  # generated on an earlier run -> reuse, no API cost
-        return {"path": cached, "kind": "reused_generated", "prompt": prompt}
-    t0 = time.time()
-    img = provider.generate(prompt, product)
+    return {"path": cached, "kind": "reused_generated" if cached.exists() else "generate", "prompt": prompt, "model": provider.name}
+
+
+def source_one(root: Path, product: dict, ctx: MarketContext, provider, standards: dict,
+               creative: str = "product") -> dict:
+    """Reuse or generate the image for one (market, product, creative type)."""
+    src = plan_source(root, product, ctx, provider, standards, creative)
+    if src["kind"] != "generate":  # a supplied asset, or generated on an earlier run -> no API cost
+        return src
+    t0, cached = time.time(), src["path"]
+    img = provider.generate(src["prompt"], product)
     cached.parent.mkdir(parents=True, exist_ok=True)
     img.save(cached)
     log.info("[%s] generated %s/%s in %.1fs (%s)", ctx.id, product["id"], creative, time.time() - t0, provider.name)
-    return {"path": cached, "kind": "generated", "prompt": prompt, "seconds": round(time.time() - t0, 1)}
+    return {"path": cached, "kind": "generated", "prompt": src["prompt"], "seconds": round(time.time() - t0, 1),
+            "model": getattr(provider, "used", provider.name)}
 
 
 def source_key(standards: dict, creative: str) -> str:
@@ -138,15 +147,20 @@ def provider_for(provider, cfg: Config, creative: str):
     return provider.for_models(preferred, fallbacks) if preferred or fallbacks else provider
 
 
+def source_jobs(cfg: Config, campaign: dict, plans: list[MarketPlan], provider) -> dict:
+    """Every image a run needs, keyed by (market, product, creative type whose image it is) -> (product, ctx,
+    type, the provider for that type). Legally blocked markets need none."""
+    kinds = {source_key(cfg.standards, c) for c in cfg.creative_types(campaign)}
+    return {(p.ctx.id, prod["id"], c): (prod, p.ctx, c, provider_for(provider, cfg, c)) for p in plans if not p.blocked
+            for prod in campaign["products"] for c in kinds}
+
+
 def source_phase(cfg: Config, campaign: dict, plans: list[MarketPlan], provider, workers: int = 4) -> dict:
     """Keyed by (market, product, creative type whose image it is). Runs in parallel."""
-    kinds = {source_key(cfg.standards, c) for c in cfg.creative_types(campaign)}
-    jobs = {(p.ctx.id, prod["id"], c): (prod, p.ctx, c) for p in plans if not p.blocked
-            for prod in campaign["products"] for c in kinds}
     sources = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {k: pool.submit(source_one, cfg.root, prod, ctx, provider_for(provider, cfg, c), cfg.standards, c)
-                   for k, (prod, ctx, c) in jobs.items()}
+        futures = {k: pool.submit(source_one, cfg.root, prod, ctx, prov, cfg.standards, c)
+                   for k, (prod, ctx, c, prov) in source_jobs(cfg, campaign, plans, provider).items()}
         for k, fut in futures.items():
             try:
                 sources[k] = fut.result()
