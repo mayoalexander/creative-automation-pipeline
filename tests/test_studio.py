@@ -108,8 +108,8 @@ def test_every_operation_is_in_the_cli_the_api_and_mcp(server):
     assert api == set(tools) == set(OPS)
     for name, o in OPS.items():
         assert tools[name].annotations.read_only_hint is (not o.write)
-        with pytest.raises(SystemExit) as e:                                  # the CLI has a subcommand for each
-            main(["op", name, "--help"])
+        with pytest.raises(SystemExit) as e:                                  # the CLI has a command for each
+            main([o.cli, "--help"])
         assert e.value.code == 0
 
 
@@ -121,7 +121,7 @@ def test_the_same_question_gets_the_same_answer_everywhere(server, capsys):
     url, tmp = server
     args = {"path": "markets/jp.yaml", "section": "overrides.acme.legal"}
     _, r = post(url + "/api/who", args)
-    main(["op", "--config", str(tmp / "config"), "who", "--path", args["path"], "--section", args["section"]])
+    main(["who", args["path"], args["section"], "--config", str(tmp / "config"), "--json"])
     cli = json.loads(capsys.readouterr().out)
     res = asyncio.run(build(Context(tmp / "config", tmp / "output")).call_tool("who", args))
     mcp = json.loads(res.content[0].text)
@@ -143,11 +143,31 @@ def test_every_help_example_runs(tmp_path, capsys):
         h = OPS["help"](ctx, operation=name)
         assert h["examples"] and all({"cli", "api", "mcp"} <= set(e) for e in h["examples"])
         for ex in h["examples"]:
-            argv = shlex.split(ex["cli"])[3:]                                  # drop "python -m engines.vanilla"
-            argv = argv[:1] + ["--config", str(ctx.config_dir), "--out", str(ctx.out_root)] + argv[1:]
+            argv = shlex.split(ex["cli"])[1:] + ["--config", str(ctx.config_dir), "--out", str(ctx.out_root), "--json"]
+            assert ex["cli"].startswith("creative ")
             argv = [("carla@example.com" if a == "you@example.com" else a) for a in argv]
             if name == "config_set":
                 argv = [a.replace("carla@", "yuki@") for a in argv]
             assert main(argv) == 0, ex["cli"]
             json.loads(capsys.readouterr().out)                                # every operation prints JSON
-    assert main(["help"]) == 0 and "INTERFACES" in capsys.readouterr().out
+    assert main([]) == 0 and "SERVE IT" in capsys.readouterr().out             # bare `creative` = help
+    assert main(["help", "set"]) == 0 and "creative set" in capsys.readouterr().out
+
+
+def test_cli_reads_like_a_sentence(tmp_path, capsys):
+    """Natural arguments are bare, old flag forms still work, nobody-set locally means you (and you're refused)."""
+    from engines.vanilla.cli import main
+    shutil.copytree(ROOT / "config", tmp_path / "config")
+    cfg = ["--config", str(tmp_path / "config")]
+    assert main(["explain", "spring-launch", "jp", "--json"] + cfg) == 0
+    bare = json.loads(capsys.readouterr().out)
+    assert main(["explain", "--campaign", "spring-launch", "--market", "jp", "--json"] + cfg) == 0
+    assert json.loads(capsys.readouterr().out) == bare and bare["market"] == "jp"
+    assert main(["explain", "--json"] + cfg) == 0                             # no arguments: every market
+    assert len(json.loads(capsys.readouterr().out)) == 6
+    assert main(["set", "markets/jp.yaml", "locale", "en-US"] + cfg) == 3      # the local user isn't on a team
+    assert "use --as" in capsys.readouterr().err
+    assert main(["set", "markets/jp.yaml", "overrides.acme.marketing.cta", "今すぐチェック", "--as", "yuki@example.com"] + cfg) == 0
+    assert "updated markets/jp.yaml" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="missing VALUE"):
+        main(["set", "markets/jp.yaml", "locale"] + cfg)

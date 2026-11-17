@@ -7,13 +7,13 @@ A proof of concept that turns **one campaign brief** into **localized, on-brand 
 **See it:**
 
 - **[Creative Studio (live, read-only)](https://heyiris.io/s/OrcP2fRi5mbu1HR3PvLDnPta4vXDMtMLmesUfMEl)**: every campaign, market, creative and approval from the last real run, plus the configuration and who owns each part.
-- **Edit it yourself:** `python -m engines.vanilla studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
+- **Edit it yourself:** `creative studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
 
 The same workflow is built **three ways**, against **one shared contract** (same config in, same files out, checked by the same tests):
 
 | Engine | What it shows | Run it |
 |---|---|---|
-| **1. `vanilla`** | The pipeline from scratch: plain Python, Pillow, stdlib HTTP | `python -m engines.vanilla run --campaign spring-launch` |
+| **1. `vanilla`** | The pipeline from scratch: plain Python, Pillow, stdlib HTTP | `creative run spring-launch` |
 | **2. `langgraph`** | The same pipeline on open-source frameworks: **LangGraph** orchestration + **Pydantic** validation, parallel fan-out, retries, human approval | `python -m engines.langgraph run --campaign spring-launch` |
 | **3. `iris`** | The same workflow running in production on **IRIS**: Atlas workspace, typed dataset of every creative, per-market approval cards, agent review | `python -m engines.iris run --campaign spring-launch` |
 
@@ -49,28 +49,29 @@ Newsletter channel, parent brand (Acme blue, no partner), same engine:
 
 ```bash
 # Python 3.12 via uv (or any Python ≥ 3.10 + pip)
-uv venv --python 3.12 && uv pip install -r requirements.txt -r requirements-dev.txt
+uv venv --python 3.12 && uv pip install -e . -r requirements-dev.txt
+source .venv/bin/activate                     # puts the `creative` command on your PATH
 
 python scripts/make_sample_assets.py          # sample logos + product shots (lotion left missing on purpose)
 
 # Offline, no API key: deterministic mock image provider
-python -m engines.vanilla run --campaign spring-launch --provider mock
+creative run spring-launch --provider mock
 
 # Real GenAI: put ONE key in .env (see .env.example). OpenRouter is the default provider.
 cp .env.example .env                           # OPENROUTER_API_KEY=...  (or OPENAI_API_KEY=...)
-python -m engines.vanilla run --campaign spring-launch                       # images + translation via OpenRouter
-python -m engines.vanilla run --campaign spring-launch --provider openai     # gpt-image-1 direct
-python -m engines.vanilla run --campaign spring-launch --env-file ~/.my/env  # keys from another file
+creative run spring-launch                       # images + translation via OpenRouter
+creative run spring-launch --provider openai     # gpt-image-1 direct
+creative run spring-launch --env-file ~/.my/env  # keys from another file
 
 python -m pytest -q                            # all engines
 ```
 
-Other useful commands:
+`creative` is the same as `python -m engines.vanilla` (no install needed for that form). Other useful commands:
 
 ```bash
-python -m engines.vanilla   run --campaign summer-promo --provider mock         # shows a market-specific legal block
-python -m engines.vanilla   run --campaign spring-launch --markets jp,mx         # subset of markets
-python -m engines.vanilla   run --campaign spring-launch --plan-only             # resolve + legal check only
+creative run summer-promo --provider mock                    # shows a market-specific legal block
+creative run spring-launch --markets jp,mx                    # subset of markets
+creative run spring-launch --plan-only                        # resolve + legal check only
 python -m engines.langgraph run --campaign spring-launch --provider mock         # asks you to approve each market
 python -m engines.langgraph run --campaign spring-launch --auto-approve
 python -m engines.langgraph graph                                                # pipeline as a Mermaid diagram
@@ -254,7 +255,7 @@ The pipeline is headless. Every operation is declared once in [`engines/vanilla/
 
 ```
   UI   the Studio ──────► API  POST /api/<op> ──┐
-  CLI  python -m engines.vanilla op <op> ────────┼──► ops.py ──► access.py ──► config · engine · audit log
+  CLI  creative <command> ──────────────────────┼──► ops.py ──► access.py ──► config · engine · audit log
   MCP  one tool per op, for Claude and agents ───┘
 ```
 
@@ -271,22 +272,21 @@ The pipeline is headless. Every operation is declared once in [`engines/vanilla/
 Same question, same answer, through any door (a test checks this):
 
 ```bash
-python -m engines.vanilla help                                             # every operation, by read / write
-python -m engines.vanilla help config_set                                  # arguments + a CLI, API and MCP example
-python -m engines.vanilla op who --path markets/jp.yaml --section overrides.acme.legal
-python -m engines.vanilla op --as yuki@example.com config_set \
-       --path markets/jp.yaml --section overrides.acme.marketing.cta --value "今すぐチェック"
+creative                                                     # every command, by read / write
+creative help set                                            # arguments + a CLI, API and MCP example
+creative who markets/jp.yaml overrides.acme.legal            # who may change Japan's legal rules
+creative set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com
 
-python -m engines.vanilla studio                                           # UI + API on :8765
+creative studio                                              # UI + API on :8765
 curl -XPOST localhost:8765/api/who -d '{"path":"markets/jp.yaml","section":"overrides.acme.legal"}'
 curl -XPOST localhost:8765/api/run -H 'X-Acting-As: carla@example.com' -d '{"campaign":"spring-launch","provider":"mock"}'
 
-python -m engines.vanilla mcp                                              # MCP over stdio
-python -m engines.vanilla mcp --http --host 0.0.0.0 --token $TOKEN         # MCP over HTTP, hosted
+creative mcp                                                 # MCP over stdio
+creative mcp --http --host 0.0.0.0 --token $TOKEN           # MCP over HTTP, hosted
 ```
 
 **With Claude Code:** the repo has a [`.mcp.json`](.mcp.json), so opening the repo in Claude Code offers the
-`creative-pipeline` server. Its `help` tool is the same document as `python -m engines.vanilla help`, and each
+`creative-pipeline` server. Its `help` tool is the same document as `creative help`, and each
 example in it is run by the tests, so the help can't drift from the code. Then ask in plain words: *"Which markets in Spring Launch are blocked, and why?"*,
 *"Change Japan's call to action to 今すぐチェック and re-run Japan with the mock provider"*, *"Who do I ask to
 change the German disclaimer?"*
@@ -331,16 +331,15 @@ One module (`engines/vanilla/access.py`) and one file (`config/teams.yaml`) hand
   hand-off to the people on the owning team.
 
 ```bash
-python -m engines.vanilla access markets/jp.yaml --section overrides.acme.legal          # who may change it
-python -m engines.vanilla access markets/jp.yaml --section overrides.acme.legal --as yuki@example.com   # may NOT
-python -m engines.vanilla access markets/jp.yaml --section overrides.acme.marketing.cta \
-       --as yuki@example.com --set "今すぐチェック"                                          # checked, audited edit
+creative who markets/jp.yaml overrides.acme.legal                             # who may change it
+creative can markets/jp.yaml overrides.acme.legal --user yuki@example.com       # may NOT
+creative set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com   # checked, audited
 ```
 
 ### Editing in the browser: the Studio
 
 ```bash
-python -m engines.vanilla studio          # http://localhost:8765
+creative studio          # http://localhost:8765
 ```
 
 The same dashboard as the hosted page, built from the live config and the last run, with editing:
@@ -396,5 +395,5 @@ AI was a tool here and I'm accountable for every line.
 
 - **Mine:** the architecture and the decisions above. Starting from discovery (regions, locales, velocity, resources), separating markets from the brief, turning discovery questions into input parameters, the global/sub-brand/partner hierarchy overridable by market, the channel and asset-type registry, influencers/affiliates per market, and building the same workflow three ways against one contract.
 - **AI-assisted (Claude Code):** scaffolding, boilerplate (HTTP wrappers, CLI parsing, report formatting), sample config and assets, first drafts of tests and this README.
-- **How it was checked:** every engine runs offline against the mock provider; 29 tests cover merge precedence, add-only legal rules, word-boundary matching, approvals, validation, access control, creative-standard rules, model fallback and the cross-engine contract; rendered output was reviewed visually and fixed where it didn't hold up (text-band layout, hard-edged product paste, an over-clever report line, a wrong test expectation); the IRIS engine was verified against a live workspace by reading the records back, not by trusting exit codes.
+- **How it was checked:** every engine runs offline against the mock provider; 38 tests cover merge precedence, add-only legal rules, word-boundary matching, approvals, validation, access control, creative-standard rules, model fallback and the cross-engine contract; rendered output was reviewed visually and fixed where it didn't hold up (text-band layout, hard-edged product paste, an over-clever report line, a wrong test expectation); the IRIS engine was verified against a live workspace by reading the records back, not by trusting exit codes.
 - **TODO (Alex):** after the line-by-line walkthrough, replace this line with what I changed myself and confirm I can explain every module without notes.

@@ -1,6 +1,6 @@
 """Creative Studio: the dashboard, served locally, with editing that goes through access control.
 
-    python -m engines.vanilla studio [--port 8765] [--env-file .env]
+    creative studio [--port 8765] [--env-file .env]
 
   GET  /                 the Studio, built from the LIVE config and the latest output
   GET  /out/<path>       rendered creatives, straight from output/vanilla
@@ -98,7 +98,7 @@ def snapshot(config_dir: str | Path, out_root: str | Path,
     genai = cfg.org["creative_resources"]["genai"]
     audit = config_dir.parent / "audit.jsonl"
     return {
-        "generated_from": "live config + output/vanilla (python -m engines.vanilla studio)",
+        "generated_from": "live config + output/vanilla (creative studio)",
         "repo": "https://github.com/mayoalexander/creative-automation-pipeline",
         "org": {"approvers": cfg.org["approvers"], "velocity": cfg.org.get("velocity", {}),
                 "genai": {k: genai.get(k) for k in ("image_provider", "openrouter_image_model", "openrouter_text_model")}},

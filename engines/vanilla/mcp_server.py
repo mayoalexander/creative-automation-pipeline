@@ -1,7 +1,7 @@
 """MCP: the operations registry as tools, so an agent (Claude, Cursor, …) works the pipeline directly.
 
-    python -m engines.vanilla mcp                       # stdio, for Claude Code / Claude Desktop (.mcp.json)
-    python -m engines.vanilla mcp --http --port 3210    # streamable HTTP, bearer token, for a hosted copy
+    creative mcp                                 # stdio, for Claude Code / Claude Desktop (.mcp.json)
+    creative mcp --http --port 3210              # streamable HTTP, bearer token, for a hosted copy
 
 One tool per operation in ops.py, generated, never hand-written: read operations are marked read-only
 (clients can auto-allow them), write operations destructive. Who the agent acts as is fixed when the

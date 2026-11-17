@@ -1,7 +1,7 @@
 """Explain a resolved market: which config file set each value.
 
-    python -m engines.vanilla explain --campaign spring-launch --market jp
-    python -m engines.vanilla explain --all --json > composition.json
+    creative explain spring-launch jp
+    creative explain --json > composition.json        # every market
 
 It replays the same layers, in the same order, as resolve_market() and records the
 last layer that wrote each setting. For add-only sections (legal, compliance) every
@@ -82,6 +82,19 @@ def explain_market(cfg: Config, campaign: dict, market_id: str) -> dict:
     }
 
 
+def width(text: str) -> int:
+    """Columns a string takes in a terminal: CJK characters take two."""
+    import unicodedata
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+def pad(text, cols: int) -> str:
+    text = str(text)
+    while width(text) > cols - 1 and text:
+        text = text[:-1]
+    return text + " " * (cols - width(text))
+
+
 def print_explain(e: dict) -> None:
     names = [layer["file"] + (f"  (overrides {layer['for']})" if layer.get("for") else "") for layer in e["layers"]]
     print(f"\n {e['campaign']} · {e['market_name']} ({e['locale']})\n")
@@ -91,12 +104,12 @@ def print_explain(e: dict) -> None:
     print("\n setting            value                              set by")
     for s in e["settings"]:
         src = names[s["layer"]] if s["layer"] is not None else "-"
-        print(f"   {s['setting']:<17}{str(s['value'])[:34]:<35}{src}")
+        print(f"   {s['setting']:<17}{pad(s['value'], 35)}{src}")
     for lst in e["lists"]:
         print(f"\n {lst['setting']} ({lst['rule']}: layers add, never remove)")
         for it in lst["items"]:
             src = e["partner"]["file"] if it["layer"] == "partner" else names[it["layer"]]
-            print(f"   + {it['value']:<32}{src}")
+            print(f"   + {pad(it['value'], 32)}{src}")
     if e["partner"]:
         p = e["partner"]
         state = "active" if p["active"] else f"OFF (switched off by {p['switched_off_by']})"

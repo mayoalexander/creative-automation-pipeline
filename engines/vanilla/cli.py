@@ -1,12 +1,21 @@
-"""Command line entry point.
+"""The `creative` command (also `python -m engines.vanilla`): the CLI door onto ops.py.
 
-    python -m engines.vanilla run --campaign spring-launch [--provider mock|openai|openrouter]
+    creative                                   what it can do
+    creative explain spring-launch jp          which config file set each value
+    creative run spring-launch --provider mock
+    creative set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com
+    creative studio | creative mcp             the UI + API, and the MCP server
+
+One command per operation, generated from ops.py: the natural arguments are typed bare, the rest
+are flags, the output is for people (--json for scripts). Old flag forms (run --campaign X) still work.
 """
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -14,8 +23,8 @@ from pathlib import Path
 import yaml
 
 from .config import load_config, load_env
-from .access import Access, ConfigStore, Forbidden
-from .explain import explain_market, print_explain
+from .access import Forbidden
+from .explain import pad, print_explain, width
 from .pipeline import render_phase, resolve_phase, source_phase, write_market_files
 from .providers import ProviderError, build_providers
 from .report import build_report, print_report, write_outputs
@@ -52,204 +61,189 @@ def run(config_dir: str, campaign_id: str, out_root: str, provider: str | None,
     return report
 
 
-def explain_cmd(args) -> int:
-    cfg = load_config(args.config)
-    if args.all:
-        pairs = [(c, m) for c in cfg.campaigns.values() for m in c["markets"]]
-    elif args.campaign and args.market:
-        pairs = [(cfg.campaigns[args.campaign], args.market)]
+# ───────────────────────────────────────────────────────── output for people (--json gives the raw result)
+def _cell(v) -> str:
+    return ", ".join(map(str, v)) if isinstance(v, list) else "" if v is None else str(v)
+
+
+def table(rows: list[dict], cols: list[str]) -> None:
+    widths = {c: min(max([len(c)] + [width(_cell(r.get(c))) for r in rows]), 44) + 2 for c in cols}
+    print("".join(pad(c.upper(), widths[c]) for c in cols).rstrip())
+    for r in rows:
+        print("".join(pad(_cell(r.get(c)), widths[c]) for c in cols).rstrip())
+
+
+def show(name: str, result, args) -> int:
+    """Print an operation's result for a person. Returns the exit code (3 = not allowed)."""
+    if name == "campaigns":
+        table(result, ["id", "name", "brand", "partner", "markets", "products", "creative_types"])
+    elif name == "explain":
+        for e in result if isinstance(result, list) else [result]:
+            print_explain(e)
+    elif name == "report":
+        print_report(result)
+    elif name == "deliverables":
+        table(result, ["market", "product", "creative", "channel", "format", "status", "path"])
+        print(f"\n{len(result)} deliverables · {sum(i['status'] == 'built' for i in result)} built")
+    elif name == "who":
+        where = result["path"] + (f"#{result['section']}" if result["section"] else "")
+        print(f"who may {result['action']} {where}" + (" (locked section)" if result["protected"] else ""))
+        for team, members in result["teams"].items():
+            print(f"  {team:<16}{', '.join(members)}")
+    elif name == "can":
+        where = result["path"] + (f"#{result['section']}" if result["section"] else "")
+        print(f"{result['user']} {'may' if result['allowed'] else 'may NOT'} {result['action']} {where}")
+        return 0 if result["allowed"] else 3
+    elif name == "config_get":
+        teams = lambda m: ", ".join(m) or "nobody"
+        print(f"# {result['file']}  ·  edit: {teams(result['editors'])}  ·  delete: {teams(result['deleters'])}")
+        for lock in result["protected"]:
+            print(f"# locked: {lock['section']}  ·  only {teams(lock['editors'])}")
+        print((Path(args.config) / result["file"]).read_text().rstrip())
+    elif name == "config_set":
+        print(f"updated {result['path']}: {', '.join(result['changed'])}  (as {result['user']}, audited)"
+              if result["changed"] else f"no change to {result['path']}")
+    elif name == "run":
+        report = json.loads((Path(result["output"]) / "report.json").read_text())
+        print_report(report)
+        t = report["totals"]
+        return 1 if (t["errors"] or t["built"] and t["brand_checks_passed"] < t["built"]) else 0
+    elif name == "snapshot":
+        print(f"{len(result['campaigns'])} campaigns · {len(result['markets'])} markets · {len(result['deliverables'])} deliverables"
+              f" · {sum(len(v) for k, v in result['config'].items() if isinstance(v, dict))} config files  (--json for all of it)")
     else:
-        raise SystemExit("use --campaign X --market Y, or --all")
-    results = [explain_market(cfg, c, m) for c, m in pairs]
-    if args.json:
-        print(json.dumps(results, indent=2, ensure_ascii=False))
-    else:
-        for r in results:
-            print_explain(r)
+        print(yaml.safe_dump(result, allow_unicode=True, sort_keys=False).rstrip())
     return 0
 
 
-def access_cmd(args) -> int:
-    access = Access.load(args.config)
-    where = f"{args.path}#{args.section}" if args.section else args.path
-    if args.set is not None or args.delete:
-        if not args.user:
-            raise SystemExit("--as is required to change anything")
-        store = ConfigStore(args.config, access)
-        try:
-            if args.delete:
-                store.delete(args.user, args.path)
-                print(f"deleted {args.path}")
-            else:
-                changed = store.set(args.user, args.path, args.section, yaml.safe_load(args.set))
-                print(f"updated {args.path}: {', '.join(changed) or 'no change'}")
-        except Forbidden as e:
-            print(f"refused: {e}", file=sys.stderr)
-            return 3
-        return 0
-    if args.user:
-        ok = access.can(args.user, args.action, args.path, args.section)
-        print(f"{args.user} {'may' if ok else 'may NOT'} {args.action} {where}")
-        return 0 if ok else 3
-    owners = access.who(args.action, args.path, args.section)
-    print(f"who may {args.action} {where}" + (" (protected section)" if access.is_protected(args.section) else ""))
-    for team, members in owners.items():
-        print(f"  {team:<16}{', '.join(members)}")
-    return 0
-
-
-def help_cmd(args) -> int:
-    """The help operation, printed for people (--json prints what the API and MCP get)."""
-    from .ops import OPS, context_from_env
-    try:
-        h = OPS["help"](context_from_env(user=args.user), operation=args.operation)
-    except KeyError as e:
-        print(f"error: {e.args[0]}", file=sys.stderr)
-        return 2
-    if args.json:
-        print(json.dumps(h, indent=2, ensure_ascii=False))
-        return 0
-    if not args.operation:
-        print(h["about"] + "\n\nActing as: " + h["acting_as"])
+def show_help(h: dict) -> None:
+    names = h.get("cli_commands", {})
+    if "operations" in h:
+        print("creative: " + h["about"] + "\n\nActing as: " + h["acting_as"])
         for kind, ops in h["operations"].items():
             print(f"\n{kind.upper()}")
             for name, summary in ops.items():
-                print(f"  {name:<14}{summary}")
-        print("\nINTERFACES")
-        for k, v in h["interfaces"].items():
-            print(f"  {k.upper():<5}{v}")
-        print("\nStart with: " + ", ".join(h["start_here"]) + ".  Details: python -m engines.vanilla help <operation>")
-        return 0
-    print(f"{h['name']}  ({'writes' if h['writes'] else 'read-only'})\n\n{h['description']}\n\nARGUMENTS")
+                print(f"  {names.get(name, name):<14}{summary}")
+        print("\nSERVE IT\n  studio        the UI + API on http://localhost:8765\n  mcp           every command as a tool for Claude and other agents")
+        print("\nOPTIONS (any command)\n  --as PERSON   who is acting (default $PIPELINE_USER, else you, locally)\n  --json        the raw result, for scripts\n"
+              "  --config DIR  --out DIR  --env-file FILE")
+        print("\nStart with: creative campaigns · creative explain spring-launch jp · creative help <command>")
+        return
+    print(f"creative {h['cli']}  ({'writes' if h['writes'] else 'read-only'})\n\n{h['description']}\n\nARGUMENTS")
+    from .ops import OPS, positional
+    bare = positional(OPS[h["name"]])
     for k, a in h["arguments"].items():
-        print(f"  --{k.replace('_', '-'):<14}{a['type']:<6}" + ("required" if a["required"] else f"default {a['default']!r}"))
+        label = k.upper() if k in bare else f"--{k.replace('_', '-')}"
+        print(f"  {label:<16}{a['type']:<6}" + ("required" if a["required"] else f"default {a['default']!r}"))
     if not h["arguments"]:
         print("  none")
+    if h.get("value"):
+        print(f"\n  VALUE is {h['value']}")
     if h.get("needs"):
         print(f"\nNEEDS\n  {h['needs']}")
     for i, ex in enumerate(h["examples"], 1):
         print(f"\nEXAMPLE {i}" if len(h["examples"]) > 1 else "\nEXAMPLE")
         print(f"  CLI  {ex['cli']}\n  API  {ex['api']}\n  MCP  {ex['mcp']}")
-    return 0
 
 
-def interface_cmd(args) -> int:
-    """UI + API (studio), MCP (mcp) and the generic CLI (op): three doors onto the same ops.py."""
-    from .ops import OPS, Context, coerce, context_from_env, describe
+# ───────────────────────────────────────────────────────── the command line
+def _common() -> argparse.ArgumentParser:
+    c = argparse.ArgumentParser(add_help=False)
+    c.add_argument("--as", dest="user", help="who is acting (default $PIPELINE_USER, else you, locally)")
+    c.add_argument("--json", action="store_true", help="print the raw result, for scripts")
+    c.add_argument("--config", default="config")
+    c.add_argument("--out", default="output")
+    c.add_argument("--env-file", default=".env", help="where API keys come from (default .env)")
+    c.add_argument("-v", "--verbose", action="store_true")
+    return c
+
+
+def parser() -> argparse.ArgumentParser:
+    from .ops import OPS, positional
+    common = _common()
+    ap = argparse.ArgumentParser(prog="creative", description="Creative automation pipeline. `creative help` for every command.",
+                                 parents=[common])
+    sub = ap.add_subparsers(dest="cmd", metavar="<command>")
+    for o in OPS.values():
+        bare = positional(o)
+        q = sub.add_parser(o.cli, parents=[common], help=o.summary, description=__import__("inspect").getdoc(o.fn),
+                           usage=f"creative {o.cli} " + " ".join(n.upper() if n in [p.name for p in o.params() if p.default is p.empty] else f"[{n.upper()}]" for n in bare)
+                                 + (" [options]" if len(bare) < len(o.params()) else ""))
+        if bare:
+            q.add_argument("bare", nargs="*", metavar=" ".join(n.upper() for n in bare), help=argparse.SUPPRESS)
+        for prm in o.params():                        # every argument also works as a flag: run --campaign X
+            flag = "--" + prm.name.replace("_", "-")
+            if prm.annotation in (bool, "bool"):
+                q.add_argument(flag, dest=prm.name, action="store_true")
+            else:
+                q.add_argument(flag, dest=prm.name, default=None, help=None if prm.name not in bare else argparse.SUPPRESS)
+        if o.name == "explain":
+            q.add_argument("--all", action="store_true", help=argparse.SUPPRESS)   # old form; no args already means all
+        if o.name == "run":
+            q.set_defaults(provider_choices=("openai", "openrouter", "mock"))
+    so = sub.add_parser("studio", parents=[common], help="the UI + API on localhost (POST /api/<operation>)")
+    so.add_argument("--port", type=int, default=8765)
+    mc = sub.add_parser("mcp", parents=[common], help="every command as an MCP tool, for Claude and other agents")
+    mc.add_argument("--http", action="store_true", help="streamable HTTP with a bearer token instead of stdio")
+    mc.add_argument("--port", type=int, default=3210)
+    mc.add_argument("--token", help="bearer token for --http (generated and printed if omitted)")
+    mc.add_argument("--host", default="127.0.0.1", help="for --http: 0.0.0.0 in a container or cloud host")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    from .ops import OPS, coerce, context_from_env, positional
+    args = parser().parse_args(argv)
+    # locally, the person at the keyboard is acting; MCP and the API never default to anyone
+    user = args.user or os.environ.get("PIPELINE_USER") or f"{getpass.getuser()} (local)"
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s")
+    if args.cmd in (None, "help") and not getattr(args, "bare", None) and not getattr(args, "operation", None):
+        h = OPS["help"](context_from_env(args.config, args.out, user))
+        print(json.dumps(h, indent=2, ensure_ascii=False)) if args.json else show_help(h)
+        return 0
     load_env(args.env_file)
     if args.cmd == "studio":
         from .studio import serve
         serve(args.config, args.out, args.port)
         return 0
-    ctx = context_from_env(args.config, args.out, args.user)
     if args.cmd == "mcp":
         from .mcp_server import serve
-        serve(ctx, args.http, args.port, args.token, args.host)
+        serve(context_from_env(args.config, args.out, args.user), args.http, args.port, args.token, args.host)
         return 0
-    if args.list or not args.op:
-        for o in describe():
-            flags = " ".join(("--" if p["required"] else "[--") + k.replace("_", "-") + ("" if p["required"] else "]")
-                             for k, p in o["params"].items())
-            print(f"  {'write' if o['write'] else 'read ':<6}{o['name']:<14}{flags}\n{'':20}{o['summary']}")
-        return 0
-    spec = OPS[args.op]
-    kw = {p.name: getattr(args, p.name) for p in spec.params()}
-    kw = {k: coerce(v) if isinstance(v, str) and k == "value" else v for k, v in kw.items()}
+
+    o = next(x for x in OPS.values() if x.cli == args.cmd)
+    kw = {p.name: getattr(args, p.name) for p in o.params() if getattr(args, p.name) not in (None, False)}
+    bare = list(getattr(args, "bare", []) or [])
+    for name in positional(o):                       # bare words fill the natural arguments in order
+        if bare and name not in kw:
+            kw[name] = bare.pop(0)
+    if bare:
+        raise SystemExit(f"creative {o.cli}: too many arguments: {' '.join(bare)}  (creative help {o.cli})")
+    missing = [p.name for p in o.params() if p.default is p.empty and p.name not in kw]
+    if missing:
+        raise SystemExit(f"creative {o.cli}: missing {', '.join(n.upper() for n in missing)}  (creative help {o.cli})")
+    if "value" in kw:
+        kw["value"] = coerce(kw["value"])
+    if o.name == "run" and kw.get("provider") and kw["provider"] not in args.provider_choices:
+        raise SystemExit(f"creative run: --provider must be one of {', '.join(args.provider_choices)}")
     try:
-        print(json.dumps(spec(ctx, **kw), indent=2, ensure_ascii=False, default=str))
+        result = o(context_from_env(args.config, args.out, user), **kw)
     except Forbidden as e:
-        print(f"refused: {e}", file=sys.stderr)
+        print(f"refused: {e}" + ("  (use --as <a team member>)" if "(local)" in user else ""), file=sys.stderr)
         return 3
-    except (FileNotFoundError, KeyError, ValueError) as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 2
-    return 0
-
-
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="engines.vanilla", description="Creative automation pipeline (vanilla)")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="run a campaign")
-    r.add_argument("--campaign", required=True)
-    r.add_argument("--config", default="config")
-    r.add_argument("--out", default="output")
-    r.add_argument("--env-file", default=".env", help="where to read API keys from (default .env)")
-    r.add_argument("--provider", choices=["openai", "openrouter", "mock"],
-                   help="overrides creative_resources.genai.image_provider in org.yaml")
-    r.add_argument("--markets", help="comma-separated subset, e.g. jp,mx")
-    r.add_argument("--plan-only", action="store_true", help="resolve + legal check only, render nothing")
-    r.add_argument("-v", "--verbose", action="store_true")
-    ac = sub.add_parser("access", help="who may do what to a config file (and edit it, checked)")
-    ac.add_argument("path", help="config path, e.g. markets/jp.yaml")
-    ac.add_argument("--section", help="dotted section, e.g. overrides.acme.legal")
-    ac.add_argument("--action", default="update", choices=["read", "create", "update", "delete"])
-    ac.add_argument("--as", dest="user", help="check (or act) as this person")
-    ac.add_argument("--set", help="with --as and --section: write this YAML value")
-    ac.add_argument("--delete", action="store_true", help="with --as: delete the file")
-    ac.add_argument("--config", default="config")
-    x = sub.add_parser("explain", help="show which config file set each value for a market")
-    x.add_argument("--campaign")
-    x.add_argument("--market")
-    x.add_argument("--all", action="store_true", help="every campaign × market")
-    x.add_argument("--config", default="config")
-    x.add_argument("--json", action="store_true")
-    so = sub.add_parser("studio", help="UI + API: the Studio on localhost, and POST /api/<op> for every operation")
-    so.add_argument("--port", type=int, default=8765)
-    mc = sub.add_parser("mcp", help="MCP: every operation as a tool for Claude and other agents")
-    mc.add_argument("--http", action="store_true", help="streamable HTTP with a bearer token instead of stdio")
-    mc.add_argument("--port", type=int, default=3210)
-    mc.add_argument("--token", help="bearer token for --http (generated and printed if omitted)")
-    mc.add_argument("--host", default="127.0.0.1", help="for --http: 0.0.0.0 in a container or cloud host")
-    mc.add_argument("--as", dest="user", help="act as this person (default: $PIPELINE_USER; none = read-only)")
-    for p in (so, mc):
-        p.add_argument("--config", default="config")
-        p.add_argument("--out", default="output")
-        p.add_argument("--env-file", default=".env", help="API keys for run (default .env)")
-    hp = sub.add_parser("help", help="how to use it: every operation, or one with its arguments and examples")
-    hp.add_argument("operation", nargs="?", default="")
-    hp.add_argument("--as", dest="user")
-    hp.add_argument("--json", action="store_true", help="the same document the API and MCP return")
-    o = sub.add_parser("op", help="call any operation by name and print JSON (python -m engines.vanilla op --list)")
-    o.add_argument("--list", action="store_true", help="every operation, its arguments and whether it writes")
-    o.add_argument("--config", default="config")
-    o.add_argument("--out", default="output")
-    o.add_argument("--env-file", default=".env")
-    o.add_argument("--as", dest="user", help="act as this person (default: $PIPELINE_USER)")
-    osub = o.add_subparsers(dest="op")
-    from .ops import OPS
-    import inspect as _i
-    for name, spec in OPS.items():                   # one subcommand per operation, flags from its signature
-        q = osub.add_parser(name, help=spec.summary, description=_i.getdoc(spec.fn))
-        for prm in spec.params():
-            flag = "--" + prm.name.replace("_", "-")
-            if prm.annotation in (bool, "bool"):
-                q.add_argument(flag, dest=prm.name, action="store_true")
-            else:
-                q.add_argument(flag, dest=prm.name, required=prm.default is _i.Parameter.empty,
-                               default=None if prm.default is _i.Parameter.empty else prm.default)
-    args = ap.parse_args(argv)
-
-    if args.cmd == "explain":
-        return explain_cmd(args)
-    if args.cmd == "access":
-        return access_cmd(args)
-    if args.cmd == "help":
-        return help_cmd(args)
-    if args.cmd in ("studio", "mcp", "op"):
-        return interface_cmd(args)
-
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(message)s")
-    load_env(getattr(args, "env_file", ".env"))
-    try:
-        report = run(args.config, args.campaign, args.out, args.provider,
-                     args.markets.split(",") if args.markets else None, args.plan_only)
     except ProviderError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    print_report(report)
-    t = report["totals"]
-    return 1 if (t["errors"] or t["built"] and t["brand_checks_passed"] < t["built"]) else 0
+    except (FileNotFoundError, KeyError, ValueError) as e:
+        print(f"error: {e.args[0] if isinstance(e, KeyError) else e}", file=sys.stderr)
+        return 2
+    if o.name == "help":
+        print(json.dumps(result, indent=2, ensure_ascii=False)) if args.json else show_help(result)
+        return 0
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+        return 0
+    return show(o.name, result, args)
 
 
 if __name__ == "__main__":

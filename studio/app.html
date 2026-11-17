@@ -47,7 +47,7 @@
   var S = { camp: D.campaigns[0].id, fmt: '1x1', ctc: 'product', dFilter: { market: '', status: '', channel: '', creative: '', q: '' }, gMarket: '', gType: '' };
   var TN = function (t) { return (D.standards[t] || {}).name || t };                 // creative type name
   var team = function (id) { var t = D.teams[id]; return t ? t.name : id };           // approver team name
-  /* ── editing: only when served by `python -m engines.vanilla studio` (window.STUDIO_EDIT). The server checks
+  /* ── editing: only when served by `creative studio` (window.STUDIO_EDIT). The server checks
      every save against teams.yaml again; the buttons here only save people a refused click. ── */
   var EDIT = !!window.STUDIO_EDIT, CUR = null;
   var people = []; Object.keys(D.teams).forEach(function (t) { (D.teams[t].members || []).forEach(function (m) { if (people.indexOf(m) < 0) people.push(m) }) });
@@ -174,7 +174,7 @@
     var fmts = []; mine.forEach(function (d) { if (fmts.indexOf(d.format) < 0) fmts.push(d.format) });
     if (fmts.indexOf(S.fmt) < 0) S.fmt = fmts[0];
     var shots = mine.filter(function (d) { return d.format === S.fmt && d.image });
-    return head('Composer', c.name + ' · ' + MN[m], 'Every config layer in the order the engine applies it, which file won each setting, and the creative that came out.', '<a class="btn" href="' + esc(D.repo) + '/blob/main/engines/vanilla/explain.py" target="_blank" rel="noopener">explain --campaign ' + esc(c.id) + ' --market ' + esc(m) + '</a>') + tabs +
+    return head('Composer', c.name + ' · ' + MN[m], 'Every config layer in the order the engine applies it, which file won each setting, and the creative that came out.', '<a class="btn" href="' + esc(D.repo) + '/blob/main/engines/vanilla/explain.py" target="_blank" rel="noopener">creative explain ' + esc(c.id) + ' ' + esc(m) + '</a>') + tabs +
       '<div class="grid g2"><div class="grid" style="align-content:start"><div class="card"><div class="ch">' + IC.composer + '<h2>Layers, applied in order</h2></div><div class="cb"><ol class="layers">' + rows + '</ol></div></div>' +
       '<div class="card"><div class="ch"><h2>Who set what</h2></div><div class="tx"><table class="won">' + won + '</table></div><div class="cb" style="padding-top:2px">' + lists + '</div></div></div>' +
       '<div class="grid" style="align-content:start"><div class="card"><div class="cb"><div class="crumb">' + esc(x.market_name) + ' · ' + esc(x.locale) + '</div><p class="msg">“' + esc(x.message) + '”</p><small>' + esc(msgSrc(x.message_source)) + '</small>' +
@@ -246,9 +246,9 @@
     var x = list[id], data = x.data; CUR = x;
     var listHtml = ids.map(function (i) { var it = list[i], nm = it.data.name || it.data.org || i; return '<a class="mrow" href="#/config/' + kind + '/' + i + '"' + (i === id ? ' style="background:var(--accbg)"' : '') + '><span class="mcode" style="border-color:' + k[2] + ';color:' + k[2] + '">' + esc(i.slice(0, 4).toUpperCase()) + '</span><span class="mmsg">' + esc(nm) + '<small class="mono">' + esc(it.file) + '</small></span></a>' }).join('');
     var leaf = firstLeaf(data, '', x.protected), ed = Object.keys(x.editors)[0], member = ed && (D.teams[ed] || {}).members ? D.teams[ed].members[0] : 'you@example.com';
-    var cmd = '<span class="c"># who may change this file</span>\npython -m engines.vanilla access ' + x.file + '\n' +
-      (leaf ? '<span class="c"># a checked, audited edit by its owner</span>\npython -m engines.vanilla access ' + x.file + ' --section ' + leaf[0] + ' \\\n    --as ' + member + ' --set "' + String(leaf[1]).slice(0, 30) + '"\n' : '') +
-      (x.protected.length ? '<span class="c"># a locked section: refused unless you are on ' + Object.keys(x.protected[0].editors).map(team).join(', ') + '</span>\npython -m engines.vanilla access ' + x.file + ' --section ' + x.protected[0].section + ' --as ' + member : '');
+    var cmd = '<span class="c"># the file, with who may change it</span>\ncreative get ' + x.file + '\n' +
+      (leaf ? '<span class="c"># a checked, audited edit by its owner</span>\ncreative set ' + x.file + ' ' + leaf[0] + ' "' + String(leaf[1]).slice(0, 30) + '" \\\n    --as ' + member + '\n' : '') +
+      (x.protected.length ? '<span class="c"># a locked section: refused unless you are on ' + Object.keys(x.protected[0].editors).map(team).join(', ') + '</span>\ncreative who ' + x.file + ' ' + x.protected[0].section : '');
     return head('Configuration', k[0], esc(k[3]) + '. Owned by <b>' + esc(k[1]) + '</b>; who may edit what comes from teams.yaml.') +
       '<div class="grid" style="grid-template-columns:minmax(220px,300px) 1fr"><div class="card" style="align-self:start"><div class="ch"><h2>' + esc(k[0]) + '</h2><span class="sp tag">' + ids.length + '</span></div>' + listHtml + '</div>' +
       '<div class="grid" style="align-content:start"><div class="card"><div class="ch"><span class="owner" style="--c:' + k[2] + '"></span><h2 class="mono">' + esc(x.file) + '</h2></div><div class="cb"><dl class="kv">' +
@@ -260,7 +260,7 @@
       (EDIT ? '<div class="card"><div class="ch"><h2>See it on the ads</h2><span class="sp tag">re-runs the campaign · cached images cost $0</span></div><div class="cb">' +
         ((kind === 'campaigns' ? [id] : x.used_by || []).length ? (kind === 'campaigns' ? [id] : x.used_by).map(function (u) { return '<button type="button" class="btn" data-rerun="' + esc(u) + '">Re-run ' + esc((D.campaigns.filter(function (c) { return c.id === u })[0] || {}).name || u) + '</button>' }).join(' ') : '<span class="tag">no campaign uses this file yet</span>') +
         '<p class="hint">Text edits reuse the cached photos. A change to what a photo shows (audience, setting, tone) generates new ones and costs about $0.04 each.</p></div></div>'
-      : '<div class="card"><div class="ch"><h2>Change it</h2><span class="sp tag">checked against teams.yaml · audited</span></div><div class="cb"><p class="hint" style="margin-top:0">This copy is read-only. Clone the repo and run <span class="mono">python -m engines.vanilla studio</span> to edit these fields in the browser, with the same permissions. Or from a terminal:</p><div class="code">' + cmd + '</div></div></div>') + '</div></div>';
+      : '<div class="card"><div class="ch"><h2>Change it</h2><span class="sp tag">checked against teams.yaml · audited</span></div><div class="cb"><p class="hint" style="margin-top:0">This copy is read-only. Clone the repo and run <span class="mono">creative studio</span> to edit these fields in the browser, with the same permissions. Or from a terminal:</p><div class="code">' + cmd + '</div></div></div>') + '</div></div>';
   };
   V.teams = function () {
     var T = D.teams, G = D.config.grants;
@@ -293,16 +293,16 @@
     var eng = [['vanilla', 'The pipeline from scratch: Python, Pillow, stdlib HTTP, parallel sourcing.'], ['langgraph', 'Same core on LangGraph: Pydantic validation, fan-out with Send, retries, human approval per market.'], ['iris', 'Same core on IRIS: a workspace per campaign, every creative as a dataset record, approval cards synced back.']];
 
     var IF = [['UI', 'The Studio', 'People who click', 'Acting as Yuki → Markets → Japan → 🔒 legal', 'var(--camp)'],
-      ['CLI', 'python -m engines.vanilla op', 'Scripts, CI, terminals', 'op who --path markets/jp.yaml --section overrides.acme.legal', 'var(--reg)'],
+      ['CLI', 'creative &lt;command&gt;', 'Scripts, CI, terminals', 'creative who markets/jp.yaml overrides.acme.legal', 'var(--reg)'],
       ['API', 'POST /api/&lt;op&gt;', 'Other services', 'curl -XPOST :8765/api/who -d \'{"path":"markets/jp.yaml","section":"overrides.acme.legal"}\'', 'var(--part)'],
-      ['MCP', 'python -m engines.vanilla mcp', 'Claude and other agents', '“Who may change Japan\'s legal rules?” → who(path, section)', 'var(--brand)']];
+      ['MCP', 'creative mcp', 'Claude and other agents', '“Who may change Japan\'s legal rules?” → who(path, section)', 'var(--brand)']];
     var layers = '<div class="card" style="margin-top:14px"><div class="ch"><h2>One core, four interfaces</h2><span class="sp tag">headless · ops.py</span></div><div class="cb">' +
       '<p style="margin:0 0 12px;color:var(--sub)">Every operation (explain, report, deliverables, who, can, config_get, config_set, run…) is declared once in <span class="mono">ops.py</span>. The CLI flags, the API routes and the MCP tools are generated from it, and the Studio is a client of the API. Same question, same answer, same permission check, whichever door it comes through.</p>' +
       '<div class="grid g4">' + IF.map(function (x) { return '<div class="card" style="box-shadow:none"><div class="ch"><span class="owner" style="--c:' + x[4] + '"></span><h2>' + x[0] + '</h2><span class="sp tag">' + esc(x[2]) + '</span></div><div class="cb"><div class="mono" style="font-size:12.5px;color:var(--acc)">' + x[1] + '</div><div class="code" style="margin-top:8px;font-size:12px;white-space:pre-wrap;word-break:break-word">' + esc(x[3]) + '</div></div></div>' }).join('') + '</div>' +
       '<div class="code" style="margin-top:12px;white-space:pre">  UI ──► API ─┐\n        CLI ──┼──► ops.py ──► access.py (who may) ──► config · engine · audit log\n        MCP ──┘     10 operations: 8 read, 2 write (a write needs a person)</div></div></div>';
     return head('How it works', 'Architecture', 'Each config file has one owner. The engine merges them per market, checks legal, sources or generates images, and asks the registry what it can build.') +
       '<div class="card"><div class="cb">' + svg + '</div></div>' + layers + '<div class="grid g3" style="margin-top:14px">' + eng.map(function (x) { return '<div class="card"><div class="ch"><h2 class="mono" style="color:var(--acc)">' + x[0] + '</h2></div><div class="cb" style="color:var(--sub)">' + esc(x[1]) + '</div></div>' }).join('') + '</div>' +
-      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Run it</h2><span class="sp tag">same config in, same files out</span></div><div class="cb"><div class="code"><span class="c"># offline, no key</span>\npython -m engines.vanilla run --campaign ' + esc(S.camp) + ' --provider mock\n<span class="c"># which file set each value</span>\npython -m engines.vanilla explain --campaign ' + esc(S.camp) + ' --market ' + esc(camp().markets[0]) + '\n<span class="c"># the same workflow on LangGraph, with a human approval per market</span>\npython -m engines.langgraph run --campaign ' + esc(S.camp) + '\npython -m pytest -q</div></div></div>';
+      '<div class="card" style="margin-top:14px"><div class="ch"><h2>Run it</h2><span class="sp tag">same config in, same files out</span></div><div class="cb"><div class="code"><span class="c"># offline, no key</span>\ncreative run ' + esc(S.camp) + ' --provider mock\n<span class="c"># which file set each value</span>\ncreative explain ' + esc(S.camp) + ' ' + esc(camp().markets[0]) + '\n<span class="c"># the same workflow on LangGraph, with a human approval per market</span>\npython -m engines.langgraph run --campaign ' + esc(S.camp) + '\npython -m pytest -q</div></div></div>';
   };
 
   function head(crumb, title, sub, act) { return '<div class="pg-h"><div><div class="crumb">' + esc(crumb) + '</div><h1>' + esc(title) + '</h1>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' + (act ? '<div class="act">' + act + '</div>' : '') + '</div>' }
