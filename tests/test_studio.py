@@ -126,3 +126,28 @@ def test_the_same_question_gets_the_same_answer_everywhere(server, capsys):
     res = asyncio.run(build(Context(tmp / "config", tmp / "output")).call_tool("who", args))
     mcp = json.loads(res.content[0].text)
     assert r["result"] == cli == mcp and list(cli["teams"]) == ["legal"]
+
+
+def test_every_help_example_runs(tmp_path, capsys):
+    """help shows a CLI, API and MCP example for each operation; each CLI example must actually work."""
+    import shlex
+    from engines.vanilla.cli import main
+    from engines.vanilla.ops import OPS, Context
+    shutil.copytree(ROOT / "config", tmp_path / "config")
+    shutil.copytree(ROOT / "assets", tmp_path / "assets", ignore=shutil.ignore_patterns("generated"))
+    ctx = Context(tmp_path / "config", tmp_path / "output")
+    OPS["run"](Context(ctx.config_dir, ctx.out_root, "carla@example.com"), campaign="spring-launch", provider="mock")
+    OPS["run"](Context(ctx.config_dir, ctx.out_root, "carla@example.com"), campaign="summer-promo", provider="mock")
+    capsys.readouterr()
+    for name in OPS:
+        h = OPS["help"](ctx, operation=name)
+        assert h["examples"] and all({"cli", "api", "mcp"} <= set(e) for e in h["examples"])
+        for ex in h["examples"]:
+            argv = shlex.split(ex["cli"])[3:]                                  # drop "python -m engines.vanilla"
+            argv = argv[:1] + ["--config", str(ctx.config_dir), "--out", str(ctx.out_root)] + argv[1:]
+            argv = [("carla@example.com" if a == "you@example.com" else a) for a in argv]
+            if name == "config_set":
+                argv = [a.replace("carla@", "yuki@") for a in argv]
+            assert main(argv) == 0, ex["cli"]
+            json.loads(capsys.readouterr().out)                                # every operation prints JSON
+    assert main(["help"]) == 0 and "INTERFACES" in capsys.readouterr().out

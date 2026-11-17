@@ -40,6 +40,7 @@ class Op:
     fn: Callable[..., Any]
     write: bool
     summary: str
+    examples: list[dict]
 
     def params(self) -> list[inspect.Parameter]:
         return list(inspect.signature(self.fn).parameters.values())[1:]      # without ctx
@@ -53,9 +54,9 @@ class Op:
 OPS: dict[str, Op] = {}
 
 
-def op(write: bool = False):
+def op(write: bool = False, examples: list[dict] | None = None):
     def register(fn):
-        OPS[fn.__name__] = Op(fn.__name__, fn, write, (fn.__doc__ or "").strip().splitlines()[0])
+        OPS[fn.__name__] = Op(fn.__name__, fn, write, (fn.__doc__ or "").strip().splitlines()[0], examples or [{}])
         return fn
     return register
 
@@ -85,7 +86,50 @@ def _validate(ctx: Context) -> None:
 
 
 # ─────────────────────────────────────────────────────────────── read
-@op()
+def _flags(o: Op, ex: dict) -> str:
+    return " ".join(f"--{k.replace('_', '-')}" + ("" if v is True else f" {json.dumps(v, ensure_ascii=False) if not isinstance(v, str) or ' ' in v else v}")
+                    for k, v in ex.items())
+
+
+def _usage(o: Op, ctx: Context) -> dict:
+    who = "--as you@example.com " if o.write else ""
+    return {
+        "name": o.name, "writes": o.write, "summary": o.summary, "description": inspect.getdoc(o.fn),
+        "arguments": {p.name: {"type": {"Any": "yaml"}.get(str(p.annotation), getattr(p.annotation, "__name__", str(p.annotation))),
+                               "required": p.default is inspect.Parameter.empty,
+                               **({} if p.default is inspect.Parameter.empty else {"default": p.default})} for p in o.params()},
+        "examples": [{"cli": f"python -m engines.vanilla op {who}{o.name} {_flags(o, ex)}".rstrip(),
+                      "api": f"curl -XPOST localhost:8765/api/{o.name}" + (" -H 'X-Acting-As: you@example.com'" if o.write else "")
+                             + (f" -d '{json.dumps(ex, ensure_ascii=False)}'" if ex else ""),
+                      "mcp": f"{o.name}({json.dumps(ex, ensure_ascii=False)})"} for ex in o.examples],
+        **({"value": "YAML: text, a number, true/false or a list like [a, b]"} if "value" in inspect.signature(o.fn).parameters else {}),
+        **({"needs": "a person acting (--as, X-Acting-As or PIPELINE_USER); checked against teams.yaml and audited"} if o.write else {}),
+    }
+
+
+@op(examples=[{}, {"operation": "config_set"}])
+def help(ctx: Context, operation: str = "") -> dict:
+    """How to use the pipeline: every operation, or one operation's arguments and examples (CLI, API and MCP)."""
+    if operation:
+        if operation not in OPS:
+            raise KeyError(f"no operation '{operation}'. Operations: {', '.join(OPS)}")
+        return _usage(OPS[operation], ctx)
+    return {
+        "about": "Creative automation pipeline: one campaign brief -> localized, on-brand ad creatives per market. "
+                 "The same operations through four interfaces: UI (Studio), CLI, API and MCP.",
+        "acting_as": ctx.user or "nobody: read-only (write operations need --as, X-Acting-As or PIPELINE_USER)",
+        "start_here": ["campaigns", "explain", "report", "who"],
+        "operations": {"read": {o.name: o.summary for o in OPS.values() if not o.write},
+                       "write": {o.name: o.summary for o in OPS.values() if o.write}},
+        "interfaces": {"cli": "python -m engines.vanilla op <operation> --arg value   (help: python -m engines.vanilla help <operation>)",
+                       "api": "POST /api/<operation> with a JSON body; GET /api/ops lists them   (python -m engines.vanilla studio)",
+                       "mcp": "one tool per operation   (python -m engines.vanilla mcp, or .mcp.json in Claude Code)",
+                       "ui": "the Studio at http://localhost:8765   (python -m engines.vanilla studio)"},
+        "more": "help(operation=<name>) for arguments and examples",
+    }
+
+
+@op(examples=[{}])
 def campaigns(ctx: Context) -> list[dict]:
     """List the campaigns: markets, products, channels and creative types of each."""
     cfg = load_config(ctx.config_dir)
@@ -95,27 +139,27 @@ def campaigns(ctx: Context) -> list[dict]:
             for cid, c in cfg.campaigns.items()]
 
 
-@op()
+@op(examples=[{"campaign": "spring-launch", "market": "jp"}])
 def explain(ctx: Context, campaign: str, market: str) -> dict:
     """Show which config file set each value for one market of a campaign (the merge, layer by layer)."""
     cfg = load_config(ctx.config_dir)
     return explain_market(cfg, cfg.campaigns[campaign], market)
 
 
-@op()
+@op(examples=[{"campaign": "summer-promo"}])
 def report(ctx: Context, campaign: str) -> dict:
     """The last run's report: totals, per-market results, cost and time."""
     return _report(ctx, campaign, "report.json")
 
 
-@op()
+@op(examples=[{"campaign": "spring-launch", "market": "jp", "creative": "influencer"}, {"campaign": "summer-promo", "status": "blocked_legal"}])
 def deliverables(ctx: Context, campaign: str, market: str = "", status: str = "", creative: str = "") -> list[dict]:
     """Every deliverable of the last run, filtered by market, status (built/planned/blocked_legal) or creative type."""
     keep = lambda i: all(not want or i.get(k) == want for k, want in (("market", market), ("status", status), ("creative", creative)))
     return [i for i in _report(ctx, campaign, "plan.json") if keep(i)]
 
 
-@op()
+@op(examples=[{"path": "markets/jp.yaml", "section": "overrides.acme.legal"}])
 def who(ctx: Context, path: str, section: str = "", action: str = "update") -> dict:
     """Which teams (and people) may read/create/update/delete a config file or one section of it."""
     access = Access.load(ctx.config_dir)
@@ -123,7 +167,7 @@ def who(ctx: Context, path: str, section: str = "", action: str = "update") -> d
             "teams": access.who(action, path, section or None)}
 
 
-@op()
+@op(examples=[{"path": "markets/de.yaml", "section": "overrides.acme.marketing.cta", "user": "hans@example.com"}])
 def can(ctx: Context, path: str, section: str = "", action: str = "update", user: str = "") -> dict:
     """Whether a person (default: whoever is acting) may do an action on a config file or section."""
     person = user or ctx.user
@@ -133,14 +177,14 @@ def can(ctx: Context, path: str, section: str = "", action: str = "update", user
             "allowed": Access.load(ctx.config_dir).can(person, action, path, section or None)}
 
 
-@op()
+@op(examples=[{"path": "markets/jp.yaml"}])
 def config_get(ctx: Context, path: str) -> dict:
     """Read one config file, e.g. markets/jp.yaml, with who owns it and its locked sections."""
     from .studio import describe_file
     return describe_file(Path(ctx.config_dir), Access.load(ctx.config_dir), path)
 
 
-@op()
+@op(examples=[{}])
 def snapshot(ctx: Context) -> dict:
     """Everything the Studio shows, in one document: campaigns, markets, deliverables, config, teams, audit."""
     from .studio import snapshot as build
@@ -148,7 +192,7 @@ def snapshot(ctx: Context) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────── write
-@op(write=True)
+@op(write=True, examples=[{"path": "markets/jp.yaml", "section": "overrides.acme.marketing.cta", "value": "今すぐチェック"}])
 def config_set(ctx: Context, path: str, section: str, value: Any) -> dict:
     """Change one value in a config file, e.g. path=markets/jp.yaml section=overrides.acme.marketing.cta.
     Checked against teams.yaml, audited, and undone if it would break the config."""
@@ -166,7 +210,7 @@ def config_set(ctx: Context, path: str, section: str, value: Any) -> dict:
     return {"path": path, "changed": changed, "user": ctx.user}
 
 
-@op(write=True)
+@op(write=True, examples=[{"campaign": "spring-launch", "provider": "mock", "markets": "jp"}])
 def run(ctx: Context, campaign: str, provider: str = "", markets: str = "", plan_only: bool = False) -> dict:
     """Run a campaign: resolve, legal check, source images, render, brand-check, report.
     provider=mock costs nothing; cached images are reused at $0. markets is a comma list, e.g. jp,mx."""

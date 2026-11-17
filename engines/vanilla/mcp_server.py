@@ -22,6 +22,7 @@ from mcp.types import ToolAnnotations
 from .ops import OPS, Context, Op
 
 INSTRUCTIONS = """Creative automation pipeline: one campaign brief -> localized, on-brand ad creatives per market.
+Call `help` first for the operations, or help(operation=...) for one operation's arguments and examples.
 Start with `campaigns`, then `explain` a market to see which config file set each value, and `report` /
 `deliverables` for the last run. `who` and `can` answer permission questions. `config_set` edits one value
 (checked against the team permissions and audited); `run` re-renders a campaign (provider=mock costs nothing)."""

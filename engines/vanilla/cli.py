@@ -98,6 +98,41 @@ def access_cmd(args) -> int:
     return 0
 
 
+def help_cmd(args) -> int:
+    """The help operation, printed for people (--json prints what the API and MCP get)."""
+    from .ops import OPS, context_from_env
+    try:
+        h = OPS["help"](context_from_env(user=args.user), operation=args.operation)
+    except KeyError as e:
+        print(f"error: {e.args[0]}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(h, indent=2, ensure_ascii=False))
+        return 0
+    if not args.operation:
+        print(h["about"] + "\n\nActing as: " + h["acting_as"])
+        for kind, ops in h["operations"].items():
+            print(f"\n{kind.upper()}")
+            for name, summary in ops.items():
+                print(f"  {name:<14}{summary}")
+        print("\nINTERFACES")
+        for k, v in h["interfaces"].items():
+            print(f"  {k.upper():<5}{v}")
+        print("\nStart with: " + ", ".join(h["start_here"]) + ".  Details: python -m engines.vanilla help <operation>")
+        return 0
+    print(f"{h['name']}  ({'writes' if h['writes'] else 'read-only'})\n\n{h['description']}\n\nARGUMENTS")
+    for k, a in h["arguments"].items():
+        print(f"  --{k.replace('_', '-'):<14}{a['type']:<6}" + ("required" if a["required"] else f"default {a['default']!r}"))
+    if not h["arguments"]:
+        print("  none")
+    if h.get("needs"):
+        print(f"\nNEEDS\n  {h['needs']}")
+    for i, ex in enumerate(h["examples"], 1):
+        print(f"\nEXAMPLE {i}" if len(h["examples"]) > 1 else "\nEXAMPLE")
+        print(f"  CLI  {ex['cli']}\n  API  {ex['api']}\n  MCP  {ex['mcp']}")
+    return 0
+
+
 def interface_cmd(args) -> int:
     """UI + API (studio), MCP (mcp) and the generic CLI (op): three doors onto the same ops.py."""
     from .ops import OPS, Context, coerce, context_from_env, describe
@@ -170,6 +205,10 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--config", default="config")
         p.add_argument("--out", default="output")
         p.add_argument("--env-file", default=".env", help="API keys for run (default .env)")
+    hp = sub.add_parser("help", help="how to use it: every operation, or one with its arguments and examples")
+    hp.add_argument("operation", nargs="?", default="")
+    hp.add_argument("--as", dest="user")
+    hp.add_argument("--json", action="store_true", help="the same document the API and MCP return")
     o = sub.add_parser("op", help="call any operation by name and print JSON (python -m engines.vanilla op --list)")
     o.add_argument("--list", action="store_true", help="every operation, its arguments and whether it writes")
     o.add_argument("--config", default="config")
@@ -194,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         return explain_cmd(args)
     if args.cmd == "access":
         return access_cmd(args)
+    if args.cmd == "help":
+        return help_cmd(args)
     if args.cmd in ("studio", "mcp", "op"):
         return interface_cmd(args)
 

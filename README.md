@@ -271,7 +271,8 @@ The pipeline is headless. Every operation is declared once in [`engines/vanilla/
 Same question, same answer, through any door (a test checks this):
 
 ```bash
-python -m engines.vanilla op --list                                        # CLI: every operation
+python -m engines.vanilla help                                             # every operation, by read / write
+python -m engines.vanilla help config_set                                  # arguments + a CLI, API and MCP example
 python -m engines.vanilla op who --path markets/jp.yaml --section overrides.acme.legal
 python -m engines.vanilla op --as yuki@example.com config_set \
        --path markets/jp.yaml --section overrides.acme.marketing.cta --value "今すぐチェック"
@@ -285,7 +286,8 @@ python -m engines.vanilla mcp --http --host 0.0.0.0 --token $TOKEN         # MCP
 ```
 
 **With Claude Code:** the repo has a [`.mcp.json`](.mcp.json), so opening the repo in Claude Code offers the
-`creative-pipeline` server. Then ask in plain words: *"Which markets in Spring Launch are blocked, and why?"*,
+`creative-pipeline` server. Its `help` tool is the same document as `python -m engines.vanilla help`, and each
+example in it is run by the tests, so the help can't drift from the code. Then ask in plain words: *"Which markets in Spring Launch are blocked, and why?"*,
 *"Change Japan's call to action to 今すぐチェック and re-run Japan with the mock provider"*, *"Who do I ask to
 change the German disclaimer?"*
 
