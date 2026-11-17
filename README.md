@@ -6,6 +6,9 @@ A proof of concept that turns **one campaign brief** into **localized, on-brand 
 
 **See it:**
 
+<p align="center"><a href="https://github.com/mayoalexander/creative-automation-pipeline/releases/download/v1.0/creative-kit-demo.mp4"><img src="docs/demo-poster.jpg" width="720" alt="Watch the demo video (3:29)"></a></p>
+
+- **[Demo video (3:29)](https://github.com/mayoalexander/creative-automation-pipeline/releases/download/v1.0/creative-kit-demo.mp4)**: the architecture, the code, the four creative types, the Studio, the four interfaces, setup, and cost controls. Narrated; every screen is real output.
 - **[Creative Studio (live, read-only)](https://heyiris.io/s/OrcP2fRi5mbu1HR3PvLDnPta4vXDMtMLmesUfMEl)**: every campaign, market, creative and approval from the last real run, plus the configuration and who owns each part.
 - **Edit it yourself:** `creative-kit studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
 - **Use it four ways:** the same operations through the Studio, the `creative-kit` CLI, an HTTP API and MCP for Claude ([one core, four interfaces](#one-core-four-interfaces-ui--cli--api--mcp)).
