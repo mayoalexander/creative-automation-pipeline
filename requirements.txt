@@ -6,3 +6,5 @@ ruamel.yaml>=0.18
 mcp>=2.3
 langgraph>=1.2
 pydantic>=2.10
+# cryptography 49+ ships no wheel for Intel Macs, so it would try to compile there
+cryptography<49; platform_system == "Darwin" and platform_machine == "x86_64"

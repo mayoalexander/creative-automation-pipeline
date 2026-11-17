@@ -67,6 +67,7 @@ alias creative="$PWD/.venv/bin/creative"
 
 ```bash
 creative run spring-launch --provider mock      # 96 ads in output/vanilla/spring-launch/
+creative run summer-promo --provider mock       # Mexico is blocked by its legal rules: by design
 ```
 
 **3 · Look around**
