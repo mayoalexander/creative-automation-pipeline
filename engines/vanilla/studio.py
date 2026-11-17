@@ -2,10 +2,10 @@
 
     python -m engines.vanilla studio [--port 8765] [--env-file .env]
 
-  GET  /                 the Studio, built from the LIVE config and the latest output (no snapshot)
+  GET  /                 the Studio, built from the LIVE config and the latest output
   GET  /out/<path>       rendered creatives, straight from output/vanilla
-  POST /api/set          {user, path, section, value}  -> ConfigStore.set: checked by access.py, audited
-  POST /api/run          {campaign, provider}          -> re-run the campaign to see the change on the ads
+  GET  /api/ops          every operation (ops.py), with its arguments
+  POST /api/<op>         call one, JSON body = its arguments; header X-Acting-As = who (write ops)
 
 snapshot() is also what the hosted (read-only) page is built from, so both show the same thing.
 Standard library only: the server is a thin shell around ConfigStore and the pipeline.
@@ -20,9 +20,10 @@ from typing import Callable
 
 import yaml
 
-from .access import Access, ConfigStore, Forbidden
+from .access import Access, Forbidden
 from .config import load_config
 from .explain import explain_market
+from .ops import OPS, Context, describe
 
 UI = Path(__file__).resolve().parents[2] / "studio"
 
@@ -34,6 +35,18 @@ def _sections(data, prefix=""):
             path = f"{prefix}.{k}" if prefix else str(k)
             out += [path] + _sections(v, path)
     return out
+
+
+def describe_file(config_dir: Path, access: Access, rel: str) -> dict:
+    """One config file: its data, who may edit or delete it, and its locked sections with their owners."""
+    f = (Path(config_dir) / rel).resolve()
+    if Path(config_dir).resolve() not in f.parents or not f.is_file():
+        raise FileNotFoundError(f"no config file {rel}")
+    data = yaml.safe_load(f.read_text()) or {}
+    locked = [s for s in _sections(data) if access.is_protected(s)
+              and not ("." in s and access.is_protected(s.rsplit(".", 1)[0]))]
+    return {"file": rel, "data": data, "editors": access.who("update", rel), "deleters": access.who("delete", rel),
+            "protected": [{"section": s, "editors": access.who("update", rel, s)} for s in locked]}
 
 
 def snapshot(config_dir: str | Path, out_root: str | Path,
@@ -68,12 +81,7 @@ def snapshot(config_dir: str | Path, out_root: str | Path,
                                  "source": i.get("source"), "path": i["path"], "checks": i.get("brand_checks"),
                                  "image": image_url(cid, i) if i["status"] == "built" else None})
 
-    def describe(rel: str) -> dict:
-        data = yaml.safe_load((config_dir / rel).read_text()) or {}
-        locked = [s for s in _sections(data) if access.is_protected(s)
-                  and not ("." in s and access.is_protected(s.rsplit(".", 1)[0]))]
-        return {"file": rel, "data": data, "editors": access.who("update", rel), "deleters": access.who("delete", rel),
-                "protected": [{"section": s, "editors": access.who("update", rel, s)} for s in locked]}
+    describe = lambda rel: describe_file(config_dir, access, rel)
 
     config = {}
     for kind in ("markets", "brands", "partners", "channels", "campaigns"):
@@ -110,7 +118,9 @@ def page(data: dict, editable: bool) -> str:
             f'<title>Creative Studio</title><style>body{{margin:0}}{(UI / "app.css").read_text()}</style></head><body>{flag}{html}</body></html>')
 
 
-def serve(config_dir: str = "config", out_root: str = "output", port: int = 8765, run=None) -> None:
+def serve(config_dir: str = "config", out_root: str = "output", port: int = 8765) -> None:
+    """The API is the operations registry over HTTP: GET /api/ops lists them, POST /api/<op> calls one.
+    The Studio page is one client of it; curl, a script or another service are others."""
     config_dir, out_root = Path(config_dir).resolve(), Path(out_root).resolve()
 
     class Handler(BaseHTTPRequestHandler):
@@ -121,48 +131,40 @@ def serve(config_dir: str = "config", out_root: str = "output", port: int = 8765
             self.end_headers()
             self.wfile.write(body)
 
-        def _json(self, code: int, obj: dict) -> None:
-            self._send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json")
+        def _json(self, code: int, obj) -> None:
+            self._send(code, json.dumps(obj, ensure_ascii=False, default=str).encode(), "application/json")
 
         def do_GET(self):
-            if self.path.split("?")[0] in ("/", "/index.html"):
+            path = self.path.split("?")[0]
+            if path in ("/", "/index.html"):
                 return self._send(200, page(snapshot(config_dir, out_root), True).encode(), "text/html; charset=utf-8")
-            if self.path == "/api/data":
-                return self._json(200, snapshot(config_dir, out_root))
-            if self.path.startswith("/out/"):
-                f = (out_root / "vanilla" / self.path[5:].split("?")[0]).resolve()
+            if path == "/api/ops":
+                return self._json(200, describe())
+            if path.startswith("/out/"):
+                f = (out_root / "vanilla" / path[5:]).resolve()
                 if out_root in f.parents and f.is_file():          # never serve outside output/
                     return self._send(200, f.read_bytes(), "image/png")
             self._send(404, b"not found", "text/plain")
 
         def do_POST(self):
+            name = self.path.split("?")[0].removeprefix("/api/")
+            if not self.path.startswith("/api/") or name not in OPS:
+                return self._json(404, {"ok": False, "error": f"no operation '{name}'", "ops": list(OPS)})
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-            if self.path == "/api/set":
-                store, f = ConfigStore(config_dir, Access.load(config_dir)), config_dir / body.get("path", "")
-                if config_dir not in f.resolve().parents or not f.is_file():
-                    return self._json(404, {"ok": False, "error": "no such config file"})
-                before = f.read_text()
-                try:
-                    changed = store.set(body["user"], body["path"], body["section"], body["value"])
-                    snapshot(config_dir, out_root)                  # the edit must leave a config every campaign can still use
-                    return self._json(200, {"ok": True, "changed": changed})
-                except Forbidden as e:
-                    return self._json(403, {"ok": False, "error": str(e)})
-                except Exception as e:                              # undo it, and say why
-                    f.write_text(before)
-                    store._log(body["user"], "revert", body["path"], [body["section"]])
-                    return self._json(400, {"ok": False, "error": f"not saved, the config would break: {type(e).__name__}: {e}"})
-            if self.path == "/api/run" and run:
-                t0 = time.time()
-                try:
-                    report = run(str(config_dir), body["campaign"], str(out_root), body.get("provider"))
-                except Exception as e:
-                    return self._json(500, {"ok": False, "error": f"{type(e).__name__}: {e}"})
-                return self._json(200, {"ok": True, "seconds": round(time.time() - t0, 1), "totals": report["totals"]})
-            self._json(404, {"ok": False, "error": "unknown endpoint"})
+            ctx = Context(config_dir, out_root, self.headers.get("X-Acting-As") or None)
+            t0 = time.time()
+            try:
+                result = OPS[name](ctx, **body)
+            except Forbidden as e:
+                return self._json(403, {"ok": False, "error": str(e)})
+            except (FileNotFoundError, KeyError) as e:
+                return self._json(404, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+            except (TypeError, ValueError) as e:
+                return self._json(400, {"ok": False, "error": str(e)})
+            self._json(200, {"ok": True, "op": name, "seconds": round(time.time() - t0, 1), "result": result})
 
         def log_message(self, *args):
             pass
 
-    print(f"Creative Studio on http://localhost:{port}  (config: {config_dir}, output: {out_root})")
+    print(f"Creative Studio + API on http://localhost:{port}  ({len(OPS)} operations, GET /api/ops)")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

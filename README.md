@@ -247,6 +247,56 @@ Verified against a live workspace (first version, product shots only): 4 approva
 
 ---
 
+## One core, four interfaces: UI · CLI · API · MCP
+
+The pipeline is headless. Every operation is declared once in [`engines/vanilla/ops.py`](engines/vanilla/ops.py)
+(typed arguments and a docstring), and each interface is generated from that list:
+
+```
+  UI   the Studio ──────► API  POST /api/<op> ──┐
+  CLI  python -m engines.vanilla op <op> ────────┼──► ops.py ──► access.py ──► config · engine · audit log
+  MCP  one tool per op, for Claude and agents ───┘
+```
+
+| Operation | Reads or writes | What it does |
+|---|---|---|
+| `campaigns` | read | campaigns, with markets, products, channels and creative types |
+| `explain` | read | which config file set each value for one market |
+| `report`, `deliverables` | read | the last run's report and every deliverable (filter by market, status, type) |
+| `who`, `can` | read | which teams may change a file or section; whether a person may |
+| `config_get`, `snapshot` | read | one config file with its owners; everything the Studio shows |
+| `config_set` | write | change one value: checked against `teams.yaml`, audited, undone if it breaks the config |
+| `run` | write | run a campaign (`provider=mock` is free; cached images cost $0) |
+
+Same question, same answer, through any door (a test checks this):
+
+```bash
+python -m engines.vanilla op --list                                        # CLI: every operation
+python -m engines.vanilla op who --path markets/jp.yaml --section overrides.acme.legal
+python -m engines.vanilla op --as yuki@example.com config_set \
+       --path markets/jp.yaml --section overrides.acme.marketing.cta --value "今すぐチェック"
+
+python -m engines.vanilla studio                                           # UI + API on :8765
+curl -XPOST localhost:8765/api/who -d '{"path":"markets/jp.yaml","section":"overrides.acme.legal"}'
+curl -XPOST localhost:8765/api/run -H 'X-Acting-As: carla@example.com' -d '{"campaign":"spring-launch","provider":"mock"}'
+
+python -m engines.vanilla mcp                                              # MCP over stdio
+python -m engines.vanilla mcp --http --host 0.0.0.0 --token $TOKEN         # MCP over HTTP, hosted
+```
+
+**With Claude Code:** the repo has a [`.mcp.json`](.mcp.json), so opening the repo in Claude Code offers the
+`creative-pipeline` server. Then ask in plain words: *"Which markets in Spring Launch are blocked, and why?"*,
+*"Change Japan's call to action to 今すぐチェック and re-run Japan with the mock provider"*, *"Who do I ask to
+change the German disclaimer?"*
+
+**Who is acting is never an argument.** The CLI takes `--as`, the API the `X-Acting-As` header (the Studio's
+picker), and MCP the `PIPELINE_USER` it was started with (set in `.mcp.json`). With nobody set, everything is
+read-only, and every write is checked again by `access.py`. Read tools are marked read-only for MCP clients,
+so they can be auto-approved; the two write tools ask first.
+
+Local and hosted are the same code: `studio` and `mcp --http` bind to `127.0.0.1` by default. A hosted
+copy would put them behind single sign-on and map each person's token to their `PIPELINE_USER`.
+
 ## Creative standards
 
 `config/creative_standards.yaml` (owned by Brand) defines the kinds of creative a campaign can ask for:

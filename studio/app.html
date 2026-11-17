@@ -59,8 +59,9 @@
   var editable = function (v) { return v == null || ['string', 'number', 'boolean'].indexOf(typeof v) >= 0 || (Array.isArray(v) && v.every(function (i) { return i == null || typeof i !== 'object' })) };
   var getAt = function (obj, path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k] }, obj) };
   var toast = function (html, bad) { var t = $('#cs-toast'); t.innerHTML = html; t.className = 'toast on' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = 'toast' }, 6000) };
-  var api = function (url, body) { return fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}).then(function (r) { return r.json().then(function (j) { j.status = r.status; return j }) }) };
-  var refresh = function () { return api('/api/data').then(function (d) { delete d.status; D = d; render() }) };
+  /* the Studio is one client of the API: POST /api/<op>, the same operations the CLI and MCP expose (ops.py) */
+  var api = function (op, args) { return fetch('/api/' + op, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Acting-As': ME }, body: JSON.stringify(args || {}) }).then(function (r) { return r.json().then(function (j) { j.status = r.status; return j }) }) };
+  var refresh = function () { return api('snapshot').then(function (r) { D = r.result; render() }) };
   var editBtn = function (path, v) {
     if (!EDIT || !CUR || !editable(v) || path === 'id') return '';
     if (mayEdit(path, CUR)) return '<button type="button" class="eb" data-edit="' + esc(path) + '" aria-label="Edit ' + esc(path) + '" title="Edit"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>';
@@ -290,8 +291,17 @@
       e('M963 364 V 392') + box(880, 394, 166, 62, 'brand_check', 'on the pixels') +
       e('M1046 425 C 1090 425 1090 150 1066 140') + box(1050, 70, 120, 68, 'outputs', 'plan · report · approvals') + '</svg>';
     var eng = [['vanilla', 'The pipeline from scratch: Python, Pillow, stdlib HTTP, parallel sourcing.'], ['langgraph', 'Same core on LangGraph: Pydantic validation, fan-out with Send, retries, human approval per market.'], ['iris', 'Same core on IRIS: a workspace per campaign, every creative as a dataset record, approval cards synced back.']];
+
+    var IF = [['UI', 'The Studio', 'People who click', 'Acting as Yuki → Markets → Japan → 🔒 legal', 'var(--camp)'],
+      ['CLI', 'python -m engines.vanilla op', 'Scripts, CI, terminals', 'op who --path markets/jp.yaml --section overrides.acme.legal', 'var(--reg)'],
+      ['API', 'POST /api/&lt;op&gt;', 'Other services', 'curl -XPOST :8765/api/who -d \'{"path":"markets/jp.yaml","section":"overrides.acme.legal"}\'', 'var(--part)'],
+      ['MCP', 'python -m engines.vanilla mcp', 'Claude and other agents', '“Who may change Japan\'s legal rules?” → who(path, section)', 'var(--brand)']];
+    var layers = '<div class="card" style="margin-top:14px"><div class="ch"><h2>One core, four interfaces</h2><span class="sp tag">headless · ops.py</span></div><div class="cb">' +
+      '<p style="margin:0 0 12px;color:var(--sub)">Every operation (explain, report, deliverables, who, can, config_get, config_set, run…) is declared once in <span class="mono">ops.py</span>. The CLI flags, the API routes and the MCP tools are generated from it, and the Studio is a client of the API. Same question, same answer, same permission check, whichever door it comes through.</p>' +
+      '<div class="grid g4">' + IF.map(function (x) { return '<div class="card" style="box-shadow:none"><div class="ch"><span class="owner" style="--c:' + x[4] + '"></span><h2>' + x[0] + '</h2><span class="sp tag">' + esc(x[2]) + '</span></div><div class="cb"><div class="mono" style="font-size:12.5px;color:var(--acc)">' + x[1] + '</div><div class="code" style="margin-top:8px;font-size:12px;white-space:pre-wrap;word-break:break-word">' + esc(x[3]) + '</div></div></div>' }).join('') + '</div>' +
+      '<div class="code" style="margin-top:12px;white-space:pre">  UI ──► API ─┐\n        CLI ──┼──► ops.py ──► access.py (who may) ──► config · engine · audit log\n        MCP ──┘     10 operations: 8 read, 2 write (a write needs a person)</div></div></div>';
     return head('How it works', 'Architecture', 'Each config file has one owner. The engine merges them per market, checks legal, sources or generates images, and asks the registry what it can build.') +
-      '<div class="card"><div class="cb">' + svg + '</div></div><div class="grid g3" style="margin-top:14px">' + eng.map(function (x) { return '<div class="card"><div class="ch"><h2 class="mono" style="color:var(--acc)">' + x[0] + '</h2></div><div class="cb" style="color:var(--sub)">' + esc(x[1]) + '</div></div>' }).join('') + '</div>' +
+      '<div class="card"><div class="cb">' + svg + '</div></div>' + layers + '<div class="grid g3" style="margin-top:14px">' + eng.map(function (x) { return '<div class="card"><div class="ch"><h2 class="mono" style="color:var(--acc)">' + x[0] + '</h2></div><div class="cb" style="color:var(--sub)">' + esc(x[1]) + '</div></div>' }).join('') + '</div>' +
       '<div class="card" style="margin-top:14px"><div class="ch"><h2>Run it</h2><span class="sp tag">same config in, same files out</span></div><div class="cb"><div class="code"><span class="c"># offline, no key</span>\npython -m engines.vanilla run --campaign ' + esc(S.camp) + ' --provider mock\n<span class="c"># which file set each value</span>\npython -m engines.vanilla explain --campaign ' + esc(S.camp) + ' --market ' + esc(camp().markets[0]) + '\n<span class="c"># the same workflow on LangGraph, with a human approval per market</span>\npython -m engines.langgraph run --campaign ' + esc(S.camp) + '\npython -m pytest -q</div></div></div>';
   };
 
@@ -334,9 +344,9 @@
     if (e.hasAttribute('data-cancel')) { render(); return }
     if (e.hasAttribute('data-rerun')) {
       var cid = e.getAttribute('data-rerun'); e.disabled = true; e.textContent = 'Running…';
-      api('/api/run', { campaign: cid }).then(function (r) {
+      api('run', { campaign: cid }).then(function (r) {
         if (!r.ok) return toast('Run failed: ' + esc(r.error), true);
-        toast('<b>' + esc(cid) + '</b> re-run in ' + r.seconds + ' s · ' + r.totals.built + ' creatives built. <a href="#/creatives" data-camp="' + esc(cid) + '">See the ads</a>');
+        toast('<b>' + esc(cid) + '</b> re-run in ' + r.seconds + ' s · ' + r.result.totals.built + ' creatives built. <a href="#/creatives" data-camp="' + esc(cid) + '">See the ads</a>');
         return refresh();
       }).catch(function () { toast('The Studio server is not answering.', true); render() });
       return;
@@ -355,10 +365,10 @@
     else if (typeof old === 'number') { val = Number(raw); if (raw === '' || isNaN(val)) { err.hidden = false; err.textContent = 'This field takes a number.'; return } }
     else if (typeof old === 'boolean') { if (raw !== 'true' && raw !== 'false') { err.hidden = false; err.textContent = 'Type true or false.'; return } val = raw === 'true' }
     e.disabled = true;
-    api('/api/set', { user: ME, path: CUR.file, section: path, value: val }).then(function (r) {
+    api('config_set', { path: CUR.file, section: path, value: val }).then(function (r) {
       if (!r.ok) { e.disabled = false; err.hidden = false; err.textContent = r.status === 403 ? 'Refused: ' + r.error : r.error; return }
       var used = CUR.used_by || [];
-      toast(r.changed.length ? 'Saved <span class="mono">' + esc(CUR.file) + '</span> · ' + esc(r.changed.join(', ')) + ' · logged as ' + esc(ME) + (used.length ? '. Re-run to see it on the ads.' : '.') : 'No change.');
+      toast(r.result.changed.length ? 'Saved <span class="mono">' + esc(CUR.file) + '</span> · ' + esc(r.result.changed.join(', ')) + ' · logged as ' + esc(ME) + (used.length ? '. Re-run to see it on the ads.' : '.') : 'No change.');
       return refresh();
     }).catch(function () { e.disabled = false; err.hidden = false; err.textContent = 'The Studio server is not answering.' });
   }

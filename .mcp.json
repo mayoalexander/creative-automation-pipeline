@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "creative-pipeline": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "engines.vanilla", "mcp"],
+      "env": { "PIPELINE_USER": "yuki@example.com" }
+    }
+  }
+}

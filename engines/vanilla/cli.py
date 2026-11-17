@@ -98,6 +98,39 @@ def access_cmd(args) -> int:
     return 0
 
 
+def interface_cmd(args) -> int:
+    """UI + API (studio), MCP (mcp) and the generic CLI (op): three doors onto the same ops.py."""
+    from .ops import OPS, Context, coerce, context_from_env, describe
+    load_env(args.env_file)
+    if args.cmd == "studio":
+        from .studio import serve
+        serve(args.config, args.out, args.port)
+        return 0
+    ctx = context_from_env(args.config, args.out, args.user)
+    if args.cmd == "mcp":
+        from .mcp_server import serve
+        serve(ctx, args.http, args.port, args.token, args.host)
+        return 0
+    if args.list or not args.op:
+        for o in describe():
+            flags = " ".join(("--" if p["required"] else "[--") + k.replace("_", "-") + ("" if p["required"] else "]")
+                             for k, p in o["params"].items())
+            print(f"  {'write' if o['write'] else 'read ':<6}{o['name']:<14}{flags}\n{'':20}{o['summary']}")
+        return 0
+    spec = OPS[args.op]
+    kw = {p.name: getattr(args, p.name) for p in spec.params()}
+    kw = {k: coerce(v) if isinstance(v, str) and k == "value" else v for k, v in kw.items()}
+    try:
+        print(json.dumps(spec(ctx, **kw), indent=2, ensure_ascii=False, default=str))
+    except Forbidden as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 3
+    except (FileNotFoundError, KeyError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="engines.vanilla", description="Creative automation pipeline (vanilla)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -125,22 +158,44 @@ def main(argv: list[str] | None = None) -> int:
     x.add_argument("--all", action="store_true", help="every campaign × market")
     x.add_argument("--config", default="config")
     x.add_argument("--json", action="store_true")
-    so = sub.add_parser("studio", help="the Studio dashboard on localhost, with checked, audited editing")
+    so = sub.add_parser("studio", help="UI + API: the Studio on localhost, and POST /api/<op> for every operation")
     so.add_argument("--port", type=int, default=8765)
-    so.add_argument("--config", default="config")
-    so.add_argument("--out", default="output")
-    so.add_argument("--env-file", default=".env", help="API keys for the Re-run button (default .env)")
+    mc = sub.add_parser("mcp", help="MCP: every operation as a tool for Claude and other agents")
+    mc.add_argument("--http", action="store_true", help="streamable HTTP with a bearer token instead of stdio")
+    mc.add_argument("--port", type=int, default=3210)
+    mc.add_argument("--token", help="bearer token for --http (generated and printed if omitted)")
+    mc.add_argument("--host", default="127.0.0.1", help="for --http: 0.0.0.0 in a container or cloud host")
+    mc.add_argument("--as", dest="user", help="act as this person (default: $PIPELINE_USER; none = read-only)")
+    for p in (so, mc):
+        p.add_argument("--config", default="config")
+        p.add_argument("--out", default="output")
+        p.add_argument("--env-file", default=".env", help="API keys for run (default .env)")
+    o = sub.add_parser("op", help="call any operation by name and print JSON (python -m engines.vanilla op --list)")
+    o.add_argument("--list", action="store_true", help="every operation, its arguments and whether it writes")
+    o.add_argument("--config", default="config")
+    o.add_argument("--out", default="output")
+    o.add_argument("--env-file", default=".env")
+    o.add_argument("--as", dest="user", help="act as this person (default: $PIPELINE_USER)")
+    osub = o.add_subparsers(dest="op")
+    from .ops import OPS
+    import inspect as _i
+    for name, spec in OPS.items():                   # one subcommand per operation, flags from its signature
+        q = osub.add_parser(name, help=spec.summary, description=_i.getdoc(spec.fn))
+        for prm in spec.params():
+            flag = "--" + prm.name.replace("_", "-")
+            if prm.annotation in (bool, "bool"):
+                q.add_argument(flag, dest=prm.name, action="store_true")
+            else:
+                q.add_argument(flag, dest=prm.name, required=prm.default is _i.Parameter.empty,
+                               default=None if prm.default is _i.Parameter.empty else prm.default)
     args = ap.parse_args(argv)
 
     if args.cmd == "explain":
         return explain_cmd(args)
     if args.cmd == "access":
         return access_cmd(args)
-    if args.cmd == "studio":
-        from .studio import serve
-        load_env(args.env_file)
-        serve(args.config, args.out, args.port, run=lambda c, camp, out, prov: run(c, camp, out, prov))
-        return 0
+    if args.cmd in ("studio", "mcp", "op"):
+        return interface_cmd(args)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(message)s")

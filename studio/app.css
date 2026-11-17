@@ -153,7 +153,7 @@ html.dark .cs,:root[data-theme="dark"] .cs{--bg:#0b0b0c;--panel:#141416;--soft:#
   .cs .sb .lbl,.cs .sb .foot,.cs .sb a .ct{display:none}
   .cs .sb a{white-space:nowrap;padding:8px 10px}
   .cs main{padding:18px 16px 32px}
-  .cs .g2,.cs .g3{grid-template-columns:1fr}
+  .cs .g2,.cs .g3,.cs .g4{grid-template-columns:1fr}
   .cs .mrow{grid-template-columns:52px 1fr;}.cs .mrow>:nth-child(n+3){grid-column:2}
   .cs .hd{flex-wrap:wrap}.cs .hd-r .pill{display:none}
   .cs .kv{grid-template-columns:110px 1fr}

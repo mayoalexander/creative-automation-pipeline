@@ -1,5 +1,6 @@
 pillow>=11
 pyyaml>=6
 ruamel.yaml>=0.18   # edits keep the config's comments
+mcp>=2.3             # the MCP interface (python -m engines.vanilla mcp)
 langgraph>=1.2
 pydantic>=2.10
