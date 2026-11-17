@@ -7,14 +7,14 @@ A proof of concept that turns **one campaign brief** into **localized, on-brand 
 **See it:**
 
 - **[Creative Studio (live, read-only)](https://heyiris.io/s/OrcP2fRi5mbu1HR3PvLDnPta4vXDMtMLmesUfMEl)**: every campaign, market, creative and approval from the last real run, plus the configuration and who owns each part.
-- **Edit it yourself:** `creative studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
-- **Use it four ways:** the same operations through the Studio, the `creative` CLI, an HTTP API and MCP for Claude ([one core, four interfaces](#one-core-four-interfaces-ui--cli--api--mcp)).
+- **Edit it yourself:** `creative-kit studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
+- **Use it four ways:** the same operations through the Studio, the `creative-kit` CLI, an HTTP API and MCP for Claude ([one core, four interfaces](#one-core-four-interfaces-ui--cli--api--mcp)).
 
 The same workflow is built **three ways**, against **one shared contract** (same config in, same files out, checked by the same tests):
 
 | Engine | What it shows | Run it |
 |---|---|---|
-| **1. `vanilla`** | The pipeline from scratch: plain Python, Pillow, stdlib HTTP | `creative run spring-launch` |
+| **1. `vanilla`** | The pipeline from scratch: plain Python, Pillow, stdlib HTTP | `creative-kit run spring-launch` |
 | **2. `langgraph`** | The same pipeline on open-source frameworks: **LangGraph** orchestration + **Pydantic** validation, parallel fan-out, retries, human approval | `python -m engines.langgraph run --campaign spring-launch` |
 | **3. `iris`** | The same workflow running in production on **IRIS**: Atlas workspace, typed dataset of every creative, per-market approval cards, agent review | `python -m engines.iris run --campaign spring-launch` |
 
@@ -53,49 +53,50 @@ Newsletter channel, parent brand (Acme blue, no partner), same engine:
 ```bash
 git clone https://github.com/mayoalexander/creative-automation-pipeline
 cd creative-automation-pipeline
-uv venv && uv pip install -e .          # or: python3 -m venv .venv && .venv/bin/pip install -e .
-source .venv/bin/activate               # puts the `creative` command on your PATH
+uv venv && uv pip install -e .  # or: python3 -m venv .venv && .venv/bin/pip install -e .
+source .venv/bin/activate       # puts the `creative-kit` command on your PATH
 ```
 
-Rather not activate the venv every time? Alias it (add the line to `~/.zshrc` or `~/.bashrc` to keep it):
+Rather not activate the venv every time? Add these to `~/.zshrc` or `~/.bashrc` (`ckit` is the short name):
 
 ```bash
-alias creative="$PWD/.venv/bin/creative"
+alias creative-kit="$PWD/.venv/bin/creative-kit"
+alias ckit="$PWD/.venv/bin/ckit"
 ```
 
 **2 · Run it** (offline, no API key)
 
 ```bash
-creative run spring-launch --provider mock      # 96 ads in output/vanilla/spring-launch/
-creative run summer-promo --provider mock       # Mexico is blocked by its legal rules: by design
+creative-kit run spring-launch --provider mock  # 96 ads in output/vanilla/spring-launch/
+creative-kit run summer-promo --provider mock   # Mexico is blocked by its legal rules: by design
 ```
 
 **3 · Look around**
 
 ```bash
-creative                                        # every command, read vs write
-creative campaigns                              # what is configured
-creative explain spring-launch jp               # which file set each value for Japan
-creative deliverables summer-promo --status blocked_legal    # what legal stopped
-creative who markets/jp.yaml overrides.acme.legal            # who may change Japan's legal rules
-creative studio                                 # the dashboard, on http://localhost:8765
+creative-kit                                                   # every command, read vs write
+creative-kit campaigns                                         # what is configured
+creative-kit explain spring-launch jp                          # which file set each value for Japan
+creative-kit deliverables summer-promo --status blocked_legal  # what legal stopped
+creative-kit who markets/jp.yaml overrides.acme.legal          # who may change Japan's legal rules
+creative-kit studio                                            # the dashboard, on http://localhost:8765
 ```
 
-<p align="center"><img src="docs/diagrams/cli.svg" width="900" alt="A terminal session: creative campaigns, who, a refused edit, an allowed edit, and a run"></p>
+<p align="center"><img src="docs/diagrams/cli.svg" width="900" alt="A terminal session: creative-kit campaigns, who, a refused edit, an allowed edit, and a run"></p>
 
 **4 · Real images** (optional): one key in `.env`. Images already generated are reused for $0.
 
 ```bash
-cp .env.example .env                            # OPENROUTER_API_KEY=...  (or OPENAI_API_KEY=...)
-creative run spring-launch                      # images + translation via OpenRouter
+cp .env.example .env            # OPENROUTER_API_KEY=...  (or OPENAI_API_KEY=...)
+creative-kit run spring-launch  # images + translation via OpenRouter
 ```
 
 **5 · Use it from Claude** (optional): open the repo in Claude Code and the [`.mcp.json`](.mcp.json) offers the
-`creative-pipeline` server. Or add it to Claude Code from anywhere:
+`creative-kit` server. Or add it to Claude Code from anywhere:
 
 ```bash
-claude mcp add creative-pipeline -e PIPELINE_USER=yuki@example.com -- \
-    "$PWD/.venv/bin/creative" mcp --config "$PWD/config" --out "$PWD/output"
+claude mcp add creative-kit -e PIPELINE_USER=yuki@example.com -- \
+    "$PWD/.venv/bin/creative-kit" mcp --config "$PWD/config" --out "$PWD/output"
 ```
 
 Then ask in plain words: *"Which Spring Launch markets are blocked, and why?"* or *"Change Japan's call to
@@ -106,20 +107,20 @@ action to 今すぐチェック and re-run Japan with the mock provider."*
 <details><summary>More commands: subsets, plan-only, the LangGraph and IRIS engines</summary>
 
 ```bash
-creative run summer-promo --provider mock                    # a market-specific legal block (Mexico)
-creative run spring-launch --markets jp,mx                    # subset of markets
-creative run spring-launch --plan-only                        # resolve + legal check only
-creative run spring-launch --provider openai                  # gpt-image-1 direct
-creative run spring-launch --env-file ~/.my/env               # keys from another file
-python -m engines.langgraph run --campaign spring-launch --provider mock         # asks you to approve each market
+creative-kit run summer-promo --provider mock                             # a market-specific legal block (Mexico)
+creative-kit run spring-launch --markets jp,mx                            # subset of markets
+creative-kit run spring-launch --plan-only                                # resolve + legal check only
+creative-kit run spring-launch --provider openai                          # gpt-image-1 direct
+creative-kit run spring-launch --env-file ~/.my/env                       # keys from another file
+python -m engines.langgraph run --campaign spring-launch --provider mock  # asks you to approve each market
 python -m engines.langgraph run --campaign spring-launch --auto-approve
-python -m engines.langgraph graph                                                # pipeline as a Mermaid diagram
-python -m engines.iris      run --campaign spring-launch --provider mock         # dry run: prints the IRIS commands
-python -m engines.iris      run --campaign spring-launch --publish               # writes to an IRIS workspace
-python -m engines.iris      sync-approvals --campaign spring-launch              # pull approver ticks back
+python -m engines.langgraph graph                                         # pipeline as a Mermaid diagram
+python -m engines.iris      run --campaign spring-launch --provider mock  # dry run: prints the IRIS commands
+python -m engines.iris      run --campaign spring-launch --publish        # writes to an IRIS workspace
+python -m engines.iris      sync-approvals --campaign spring-launch       # pull approver ticks back
 ```
 
-`creative` is the same as `python -m engines.vanilla`, which works without installing.
+`creative-kit` (short: `ckit`) is the same as `python -m engines.vanilla`, which works without installing.
 </details>
 
 ---
@@ -316,21 +317,21 @@ The pipeline is headless. Every operation is declared once in [`engines/vanilla/
 Same question, same answer, through any door (a test checks this):
 
 ```bash
-creative                                                     # every command, by read / write
-creative help set                                            # arguments + a CLI, API and MCP example
-creative who markets/jp.yaml overrides.acme.legal            # who may change Japan's legal rules
-creative set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com
+creative-kit                                           # every command, by read / write
+creative-kit help set                                  # arguments + a CLI, API and MCP example
+creative-kit who markets/jp.yaml overrides.acme.legal  # who may change Japan's legal rules
+creative-kit set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com
 
-creative studio                                              # UI + API on :8765
+creative-kit studio                                    # UI + API on :8765
 curl -XPOST localhost:8765/api/who -d '{"path":"markets/jp.yaml","section":"overrides.acme.legal"}'
 curl -XPOST localhost:8765/api/run -H 'X-Acting-As: carla@example.com' -d '{"campaign":"spring-launch","provider":"mock"}'
 
-creative mcp                                                 # MCP over stdio
-creative mcp --http --host 0.0.0.0 --token $TOKEN           # MCP over HTTP, hosted
+creative-kit mcp                                       # MCP over stdio
+creative-kit mcp --http --host 0.0.0.0 --token $TOKEN  # MCP over HTTP, hosted
 ```
 
 **With Claude Code:** the repo has a [`.mcp.json`](.mcp.json), so opening the repo in Claude Code offers the
-`creative-pipeline` server. Its `help` tool is the same document as `creative help`, and each
+`creative-kit` server. Its `help` tool is the same document as `creative-kit help`, and each
 example in it is run by the tests, so the help can't drift from the code. Then ask in plain words: *"Which markets in Spring Launch are blocked, and why?"*,
 *"Change Japan's call to action to 今すぐチェック and re-run Japan with the mock provider"*, *"Who do I ask to
 change the German disclaimer?"*
@@ -342,6 +343,22 @@ so they can be auto-approved; the two write tools ask first.
 
 Local and hosted are the same code: `studio` and `mcp --http` bind to `127.0.0.1` by default. A hosted
 copy would put them behind single sign-on and map each person's token to their `PIPELINE_USER`.
+
+## Built for an FDE engagement
+
+`creative-kit` is shaped the way a forward-deployed engineer would hand it to a customer:
+
+| The customer's team | Owns | Uses |
+|---|---|---|
+| Brand, Legal, Regional, Partnerships, Channels, Campaigns | their own YAML files (`teams.yaml` says which) | the Studio, or `creative-kit set … --as them` |
+| Ops / leadership | `org.yaml`: regions, velocity target, budget, approvers | `creative-kit report`, the Studio overview |
+| Their engineers | nothing new: it's config + a CLI | `creative-kit` in CI, `POST /api/<operation>` from their tools |
+| Their agents | nothing new | `creative-kit mcp`: the same operations as tools |
+
+What the FDE does per customer: point `assets/` at their DAM, write their brand, market and legal YAML with
+each team, plug their image model in as a provider (one class in `providers.py`; Firefly would sit next to
+OpenRouter and OpenAI), and connect approvals to where their reviewers already work (the IRIS engine shows
+this with approval cards). The engine, the checks and the four interfaces don't change.
 
 ## Creative standards
 
@@ -375,15 +392,15 @@ One module (`engines/vanilla/access.py`) and one file (`config/teams.yaml`) hand
   hand-off to the people on the owning team.
 
 ```bash
-creative who markets/jp.yaml overrides.acme.legal                             # who may change it
-creative can markets/jp.yaml overrides.acme.legal --user yuki@example.com       # may NOT
-creative set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com   # checked, audited
+creative-kit who markets/jp.yaml overrides.acme.legal                                        # who may change it
+creative-kit can markets/jp.yaml overrides.acme.legal --user yuki@example.com                # may NOT
+creative-kit set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com  # checked, audited
 ```
 
 ### Editing in the browser: the Studio
 
 ```bash
-creative studio          # http://localhost:8765
+creative-kit studio          # http://localhost:8765
 ```
 
 The same dashboard as the hosted page, built from the live config and the last run, with editing:

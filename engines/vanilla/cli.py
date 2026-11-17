@@ -1,10 +1,10 @@
-"""The `creative` command (also `python -m engines.vanilla`): the CLI door onto ops.py.
+"""The `creative-kit` command (short: `ckit`; also `python -m engines.vanilla`): the CLI door onto ops.py.
 
-    creative                                   what it can do
-    creative explain spring-launch jp          which config file set each value
-    creative run spring-launch --provider mock
-    creative set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com
-    creative studio | creative mcp             the UI + API, and the MCP server
+    creative-kit                                   what it can do  (short: ckit)
+    creative-kit explain spring-launch jp          which config file set each value
+    creative-kit run spring-launch --provider mock
+    creative-kit set markets/jp.yaml overrides.acme.marketing.cta 今すぐチェック --as yuki@example.com
+    creative-kit studio | creative-kit mcp             the UI + API, and the MCP server
 
 One command per operation, generated from ops.py: the natural arguments are typed bare, the rest
 are flags, the output is for people (--json for scripts). Old flag forms (run --campaign X) still work.
@@ -119,7 +119,7 @@ def show(name: str, result, args) -> int:
 def show_help(h: dict) -> None:
     names = h.get("cli_commands", {})
     if "operations" in h:
-        print("creative: " + h["about"] + "\n\nActing as: " + h["acting_as"])
+        print("creative-kit: " + h["about"] + "\n\nActing as: " + h["acting_as"])
         for kind, ops in h["operations"].items():
             print(f"\n{kind.upper()}")
             for name, summary in ops.items():
@@ -127,9 +127,9 @@ def show_help(h: dict) -> None:
         print("\nSERVE IT\n  studio        the UI + API on http://localhost:8765\n  mcp           every command as a tool for Claude and other agents")
         print("\nOPTIONS (any command)\n  --as PERSON   who is acting (default $PIPELINE_USER, else you, locally)\n  --json        the raw result, for scripts\n"
               "  --config DIR  --out DIR  --env-file FILE")
-        print("\nStart with: creative campaigns · creative explain spring-launch jp · creative help <command>")
+        print("\nStart with: creative-kit campaigns · creative-kit explain spring-launch jp · creative-kit help <command>")
         return
-    print(f"creative {h['cli']}  ({'writes' if h['writes'] else 'read-only'})\n\n{h['description']}\n\nARGUMENTS")
+    print(f"creative-kit {h['cli']}  ({'writes' if h['writes'] else 'read-only'})\n\n{h['description']}\n\nARGUMENTS")
     from .ops import OPS, positional
     bare = positional(OPS[h["name"]])
     for k, a in h["arguments"].items():
@@ -161,13 +161,13 @@ def _common() -> argparse.ArgumentParser:
 def parser() -> argparse.ArgumentParser:
     from .ops import OPS, positional
     common = _common()
-    ap = argparse.ArgumentParser(prog="creative", description="Creative automation pipeline. `creative help` for every command.",
+    ap = argparse.ArgumentParser(prog="creative-kit", description="Creative automation pipeline. `creative-kit help` for every command.",
                                  parents=[common])
     sub = ap.add_subparsers(dest="cmd", metavar="<command>")
     for o in OPS.values():
         bare = positional(o)
         q = sub.add_parser(o.cli, parents=[common], help=o.summary, description=__import__("inspect").getdoc(o.fn),
-                           usage=f"creative {o.cli} " + " ".join(n.upper() if n in [p.name for p in o.params() if p.default is p.empty] else f"[{n.upper()}]" for n in bare)
+                           usage=f"creative-kit {o.cli} " + " ".join(n.upper() if n in [p.name for p in o.params() if p.default is p.empty] else f"[{n.upper()}]" for n in bare)
                                  + (" [options]" if len(bare) < len(o.params()) else ""))
         if bare:
             q.add_argument("bare", nargs="*", metavar=" ".join(n.upper() for n in bare), help=argparse.SUPPRESS)
@@ -218,14 +218,14 @@ def main(argv: list[str] | None = None) -> int:
         if bare and name not in kw:
             kw[name] = bare.pop(0)
     if bare:
-        raise SystemExit(f"creative {o.cli}: too many arguments: {' '.join(bare)}  (creative help {o.cli})")
+        raise SystemExit(f"creative-kit {o.cli}: too many arguments: {' '.join(bare)}  (creative-kit help {o.cli})")
     missing = [p.name for p in o.params() if p.default is p.empty and p.name not in kw]
     if missing:
-        raise SystemExit(f"creative {o.cli}: missing {', '.join(n.upper() for n in missing)}  (creative help {o.cli})")
+        raise SystemExit(f"creative-kit {o.cli}: missing {', '.join(n.upper() for n in missing)}  (creative-kit help {o.cli})")
     if "value" in kw:
         kw["value"] = coerce(kw["value"])
     if o.name == "run" and kw.get("provider") and kw["provider"] not in args.provider_choices:
-        raise SystemExit(f"creative run: --provider must be one of {', '.join(args.provider_choices)}")
+        raise SystemExit(f"creative-kit run: --provider must be one of {', '.join(args.provider_choices)}")
     try:
         result = o(context_from_env(args.config, args.out, user), **kw)
     except Forbidden as e:

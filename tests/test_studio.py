@@ -144,14 +144,14 @@ def test_every_help_example_runs(tmp_path, capsys):
         assert h["examples"] and all({"cli", "api", "mcp"} <= set(e) for e in h["examples"])
         for ex in h["examples"]:
             argv = shlex.split(ex["cli"])[1:] + ["--config", str(ctx.config_dir), "--out", str(ctx.out_root), "--json"]
-            assert ex["cli"].startswith("creative ")
+            assert ex["cli"].startswith("creative-kit ")
             argv = [("carla@example.com" if a == "you@example.com" else a) for a in argv]
             if name == "config_set":
                 argv = [a.replace("carla@", "yuki@") for a in argv]
             assert main(argv) == 0, ex["cli"]
             json.loads(capsys.readouterr().out)                                # every operation prints JSON
-    assert main([]) == 0 and "SERVE IT" in capsys.readouterr().out             # bare `creative` = help
-    assert main(["help", "set"]) == 0 and "creative set" in capsys.readouterr().out
+    assert main([]) == 0 and "SERVE IT" in capsys.readouterr().out             # bare `creative-kit` = help
+    assert main(["help", "set"]) == 0 and "creative-kit set" in capsys.readouterr().out
 
 
 def test_cli_reads_like_a_sentence(tmp_path, capsys):

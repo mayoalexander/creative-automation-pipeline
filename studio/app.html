@@ -47,7 +47,7 @@
   var S = { camp: D.campaigns[0].id, fmt: '1x1', ctc: 'product', dFilter: { market: '', status: '', channel: '', creative: '', q: '' }, gMarket: '', gType: '' };
   var TN = function (t) { return (D.standards[t] || {}).name || t };                 // creative type name
   var team = function (id) { var t = D.teams[id]; return t ? t.name : id };           // approver team name
-  /* ── editing: only when served by `creative studio` (window.STUDIO_EDIT). The server checks
+  /* ── editing: only when served by `creative-kit studio` (window.STUDIO_EDIT). The server checks
      every save against teams.yaml again; the buttons here only save people a refused click. ── */
   var EDIT = !!window.STUDIO_EDIT, CUR = null;
   var people = []; Object.keys(D.teams).forEach(function (t) { (D.teams[t].members || []).forEach(function (m) { if (people.indexOf(m) < 0) people.push(m) }) });
@@ -174,7 +174,7 @@
     var fmts = []; mine.forEach(function (d) { if (fmts.indexOf(d.format) < 0) fmts.push(d.format) });
     if (fmts.indexOf(S.fmt) < 0) S.fmt = fmts[0];
     var shots = mine.filter(function (d) { return d.format === S.fmt && d.image });
-    return head('Composer', c.name + ' · ' + MN[m], 'Every config layer in the order the engine applies it, which file won each setting, and the creative that came out.', '<a class="btn" href="' + esc(D.repo) + '/blob/main/engines/vanilla/explain.py" target="_blank" rel="noopener">creative explain ' + esc(c.id) + ' ' + esc(m) + '</a>') + tabs +
+    return head('Composer', c.name + ' · ' + MN[m], 'Every config layer in the order the engine applies it, which file won each setting, and the creative that came out.', '<a class="btn" href="' + esc(D.repo) + '/blob/main/engines/vanilla/explain.py" target="_blank" rel="noopener">creative-kit explain ' + esc(c.id) + ' ' + esc(m) + '</a>') + tabs +
       '<div class="grid g2"><div class="grid" style="align-content:start"><div class="card"><div class="ch">' + IC.composer + '<h2>Layers, applied in order</h2></div><div class="cb"><ol class="layers">' + rows + '</ol></div></div>' +
       '<div class="card"><div class="ch"><h2>Who set what</h2></div><div class="tx"><table class="won">' + won + '</table></div><div class="cb" style="padding-top:2px">' + lists + '</div></div></div>' +
       '<div class="grid" style="align-content:start"><div class="card"><div class="cb"><div class="crumb">' + esc(x.market_name) + ' · ' + esc(x.locale) + '</div><p class="msg">“' + esc(x.message) + '”</p><small>' + esc(msgSrc(x.message_source)) + '</small>' +
@@ -260,7 +260,7 @@
       (EDIT ? '<div class="card"><div class="ch"><h2>See it on the ads</h2><span class="sp tag">re-runs the campaign · cached images cost $0</span></div><div class="cb">' +
         ((kind === 'campaigns' ? [id] : x.used_by || []).length ? (kind === 'campaigns' ? [id] : x.used_by).map(function (u) { return '<button type="button" class="btn" data-rerun="' + esc(u) + '">Re-run ' + esc((D.campaigns.filter(function (c) { return c.id === u })[0] || {}).name || u) + '</button>' }).join(' ') : '<span class="tag">no campaign uses this file yet</span>') +
         '<p class="hint">Text edits reuse the cached photos. A change to what a photo shows (audience, setting, tone) generates new ones and costs about $0.04 each.</p></div></div>'
-      : '<div class="card"><div class="ch"><h2>Change it</h2><span class="sp tag">checked against teams.yaml · audited</span></div><div class="cb"><p class="hint" style="margin-top:0">This copy is read-only. Clone the repo and run <span class="mono">creative studio</span> to edit these fields in the browser, with the same permissions. Or from a terminal:</p><div class="code">' + cmd + '</div></div></div>') + '</div></div>';
+      : '<div class="card"><div class="ch"><h2>Change it</h2><span class="sp tag">checked against teams.yaml · audited</span></div><div class="cb"><p class="hint" style="margin-top:0">This copy is read-only. Clone the repo and run <span class="mono">creative-kit studio</span> to edit these fields in the browser, with the same permissions. Or from a terminal:</p><div class="code">' + cmd + '</div></div></div>') + '</div></div>';
   };
   V.teams = function () {
     var T = D.teams, G = D.config.grants;
@@ -293,9 +293,9 @@
     var eng = [['vanilla', 'The pipeline from scratch: Python, Pillow, stdlib HTTP, parallel sourcing.'], ['langgraph', 'Same core on LangGraph: Pydantic validation, fan-out with Send, retries, human approval per market.'], ['iris', 'Same core on IRIS: a workspace per campaign, every creative as a dataset record, approval cards synced back.']];
 
     var IF = [['UI', 'The Studio', 'People who click', 'Acting as Yuki → Markets → Japan → 🔒 legal', 'var(--camp)'],
-      ['CLI', 'creative &lt;command&gt;', 'Scripts, CI, terminals', 'creative who markets/jp.yaml overrides.acme.legal', 'var(--reg)'],
+      ['CLI', 'creative-kit &lt;command&gt;', 'Scripts, CI, terminals', 'creative-kit who markets/jp.yaml overrides.acme.legal', 'var(--reg)'],
       ['API', 'POST /api/&lt;op&gt;', 'Other services', 'curl -XPOST :8765/api/who -d \'{"path":"markets/jp.yaml","section":"overrides.acme.legal"}\'', 'var(--part)'],
-      ['MCP', 'creative mcp', 'Claude and other agents', '“Who may change Japan\'s legal rules?” → who(path, section)', 'var(--brand)']];
+      ['MCP', 'creative-kit mcp', 'Claude and other agents', '“Who may change Japan\'s legal rules?” → who(path, section)', 'var(--brand)']];
     var layers = '<div class="card" style="margin-top:14px"><div class="ch"><h2>One core, four interfaces</h2><span class="sp tag">headless · ops.py</span></div><div class="cb">' +
       '<p style="margin:0 0 12px;color:var(--sub)">Every operation (explain, report, deliverables, who, can, config_get, config_set, run…) is declared once in <span class="mono">ops.py</span>. The CLI flags, the API routes and the MCP tools are generated from it, and the Studio is a client of the API. Same question, same answer, same permission check, whichever door it comes through.</p>' +
       '<div class="grid g4">' + IF.map(function (x) { return '<div class="card" style="box-shadow:none"><div class="ch"><span class="owner" style="--c:' + x[4] + '"></span><h2>' + x[0] + '</h2><span class="sp tag">' + esc(x[2]) + '</span></div><div class="cb"><div class="mono" style="font-size:12.5px;color:var(--acc)">' + x[1] + '</div><div class="code" style="margin-top:8px;font-size:12px;white-space:pre-wrap;word-break:break-word">' + esc(x[3]) + '</div></div></div>' }).join('') + '</div>' +

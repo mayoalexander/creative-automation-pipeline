@@ -1,7 +1,7 @@
 """Explain a resolved market: which config file set each value.
 
-    creative explain spring-launch jp
-    creative explain --json > composition.json        # every market
+    creative-kit explain spring-launch jp
+    creative-kit explain --json > composition.json        # every market
 
 It replays the same layers, in the same order, as resolve_market() and records the
 last layer that wrote each setting. For add-only sections (legal, compliance) every

@@ -1,7 +1,7 @@
 """The pipeline's operations: the one layer every interface calls.
 
     UI (Studio) ──► API  /api/<op> ──┐
-    CLI   creative <command> ─────────────────┼──► OPS[<op>](ctx, **args) ──► config · access · engine
+    CLI   creative-kit <command> ─────────────────┼──► OPS[<op>](ctx, **args) ──► config · access · engine
     MCP   one tool per op (Claude, Cursor, …) ──┘
 
 Each operation is declared once below, with typed arguments and a docstring. The CLI flags, the API
@@ -41,7 +41,7 @@ class Op:
     write: bool
     summary: str
     examples: list[dict]
-    cli: str                            # the command name in `creative <cli>` (short for the config ops)
+    cli: str                            # the command name in `creative-kit <cli>` (short for the config ops)
 
     def params(self) -> list[inspect.Parameter]:
         return list(inspect.signature(self.fn).parameters.values())[1:]      # without ctx
@@ -92,17 +92,17 @@ POSITIONAL = ("operation", "campaign", "market", "path", "section", "value")   #
 
 
 def positional(o: Op) -> list[str]:
-    """The arguments `creative <cmd>` takes without a flag: the natural ones, in signature order."""
+    """The arguments `creative-kit <cmd>` takes without a flag: the natural ones, in signature order."""
     return [p.name for p in o.params() if p.name in POSITIONAL]
 
 
 def cli_example(o: Op, ex: dict) -> str:
-    """`creative <cmd> campaign market … [--flag value]`, quoted only where a shell needs it."""
+    """`creative-kit <cmd> campaign market … [--flag value]`, quoted only where a shell needs it."""
     import re
     import shlex
     q = lambda v: (v if isinstance(v, str) and re.fullmatch(r"[\w@%+=:,./-]+", v) else
                    shlex.quote(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)))
-    ex, words = dict(ex), ["creative", o.cli]
+    ex, words = dict(ex), ["creative-kit", o.cli]
     for name in positional(o):
         if name not in ex:
             break
@@ -143,10 +143,10 @@ def help(ctx: Context, operation: str = "") -> dict:
         "operations": {"read": {o.name: o.summary for o in OPS.values() if not o.write},
                        "write": {o.name: o.summary for o in OPS.values() if o.write}},
         "cli_commands": {o.name: o.cli for o in OPS.values()},
-        "interfaces": {"cli": "creative <command> ARGS   (creative help <command>; --json for machines)",
-                       "api": "POST /api/<operation> with a JSON body; GET /api/ops lists them   (creative studio)",
-                       "mcp": "one tool per operation   (creative mcp, or .mcp.json in Claude Code)",
-                       "ui": "the Studio at http://localhost:8765   (creative studio)"},
+        "interfaces": {"cli": "creative-kit <command> ARGS   (creative-kit help <command>; --json for machines)",
+                       "api": "POST /api/<operation> with a JSON body; GET /api/ops lists them   (creative-kit studio)",
+                       "mcp": "one tool per operation   (creative-kit mcp, or .mcp.json in Claude Code)",
+                       "ui": "the Studio at http://localhost:8765   (creative-kit studio)"},
         "more": "help(operation=<name>) for arguments and examples",
     }
 

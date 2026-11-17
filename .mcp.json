@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "creative-pipeline": {
-      "command": ".venv/bin/creative",
+    "creative-kit": {
+      "command": ".venv/bin/creative-kit",
       "args": ["mcp"],
       "env": { "PIPELINE_USER": "yuki@example.com" }
     }

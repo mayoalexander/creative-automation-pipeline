@@ -1,7 +1,7 @@
 """MCP: the operations registry as tools, so an agent (Claude, Cursor, …) works the pipeline directly.
 
-    creative mcp                                 # stdio, for Claude Code / Claude Desktop (.mcp.json)
-    creative mcp --http --port 3210              # streamable HTTP, bearer token, for a hosted copy
+    creative-kit mcp                                 # stdio, for Claude Code / Claude Desktop (.mcp.json)
+    creative-kit mcp --http --port 3210              # streamable HTTP, bearer token, for a hosted copy
 
 One tool per operation in ops.py, generated, never hand-written: read operations are marked read-only
 (clients can auto-allow them), write operations destructive. Who the agent acts as is fixed when the
@@ -43,7 +43,7 @@ def _tool(o: Op, ctx: Context):
 
 def build(ctx: Context) -> MCPServer:
     who = f" Acting as {ctx.user}." if ctx.user else " Read-only: no PIPELINE_USER, so write tools are refused."
-    server = MCPServer("creative-pipeline", instructions=INSTRUCTIONS + who)
+    server = MCPServer("creative-kit", instructions=INSTRUCTIONS + who)
     for o in OPS.values():
         server.add_tool(_tool(o, ctx), name=o.name, description=inspect.getdoc(o.fn),
                         annotations=ToolAnnotations(read_only_hint=not o.write, destructive_hint=o.write, idempotent_hint=not o.write, open_world_hint=False))

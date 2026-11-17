@@ -10,7 +10,8 @@ requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
 [project.scripts]
-creative = "engines.vanilla.cli:main"     # the CLI; same as python -m engines.vanilla
+creative-kit = "engines.vanilla.cli:main"     # the CLI; same as python -m engines.vanilla
+ckit = "engines.vanilla.cli:main"             # short name
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
