@@ -8,6 +8,7 @@ A proof of concept that turns **one campaign brief** into **localized, on-brand 
 
 - **[Creative Studio (live, read-only)](https://heyiris.io/s/OrcP2fRi5mbu1HR3PvLDnPta4vXDMtMLmesUfMEl)**: every campaign, market, creative and approval from the last real run, plus the configuration and who owns each part.
 - **Edit it yourself:** `creative studio` serves the same Studio on localhost with editing, checked by team permissions and audited ([how it works](#editing-in-the-browser-the-studio)).
+- **Use it four ways:** the same operations through the Studio, the `creative` CLI, an HTTP API and MCP for Claude ([one core, four interfaces](#one-core-four-interfaces-ui--cli--api--mcp)).
 
 The same workflow is built **three ways**, against **one shared contract** (same config in, same files out, checked by the same tests):
 
@@ -47,31 +48,68 @@ Newsletter channel, parent brand (Acme blue, no partner), same engine:
 
 ## Quick start
 
+**1 · Install** (Python 3.10+, with [uv](https://docs.astral.sh/uv/) or plain pip)
+
 ```bash
-# Python 3.12 via uv (or any Python ≥ 3.10 + pip)
-uv venv --python 3.12 && uv pip install -e . -r requirements-dev.txt
-source .venv/bin/activate                     # puts the `creative` command on your PATH
-
-python scripts/make_sample_assets.py          # sample logos + product shots (lotion left missing on purpose)
-
-# Offline, no API key: deterministic mock image provider
-creative run spring-launch --provider mock
-
-# Real GenAI: put ONE key in .env (see .env.example). OpenRouter is the default provider.
-cp .env.example .env                           # OPENROUTER_API_KEY=...  (or OPENAI_API_KEY=...)
-creative run spring-launch                       # images + translation via OpenRouter
-creative run spring-launch --provider openai     # gpt-image-1 direct
-creative run spring-launch --env-file ~/.my/env  # keys from another file
-
-python -m pytest -q                            # all engines
+git clone https://github.com/mayoalexander/creative-automation-pipeline
+cd creative-automation-pipeline
+uv venv && uv pip install -e .          # or: python3 -m venv .venv && .venv/bin/pip install -e .
+source .venv/bin/activate               # puts the `creative` command on your PATH
 ```
 
-`creative` is the same as `python -m engines.vanilla` (no install needed for that form). Other useful commands:
+Rather not activate the venv every time? Alias it (add the line to `~/.zshrc` or `~/.bashrc` to keep it):
 
 ```bash
-creative run summer-promo --provider mock                    # shows a market-specific legal block
+alias creative="$PWD/.venv/bin/creative"
+```
+
+**2 · Run it** (offline, no API key)
+
+```bash
+creative run spring-launch --provider mock      # 96 ads in output/vanilla/spring-launch/
+```
+
+**3 · Look around**
+
+```bash
+creative                                        # every command, read vs write
+creative campaigns                              # what is configured
+creative explain spring-launch jp               # which file set each value for Japan
+creative deliverables summer-promo --status blocked_legal    # what legal stopped
+creative who markets/jp.yaml overrides.acme.legal            # who may change Japan's legal rules
+creative studio                                 # the dashboard, on http://localhost:8765
+```
+
+<p align="center"><img src="docs/diagrams/cli.svg" width="900" alt="A terminal session: creative campaigns, who, a refused edit, an allowed edit, and a run"></p>
+
+**4 · Real images** (optional): one key in `.env`. Images already generated are reused for $0.
+
+```bash
+cp .env.example .env                            # OPENROUTER_API_KEY=...  (or OPENAI_API_KEY=...)
+creative run spring-launch                      # images + translation via OpenRouter
+```
+
+**5 · Use it from Claude** (optional): open the repo in Claude Code and the [`.mcp.json`](.mcp.json) offers the
+`creative-pipeline` server. Or add it to Claude Code from anywhere:
+
+```bash
+claude mcp add creative-pipeline -e PIPELINE_USER=yuki@example.com -- \
+    "$PWD/.venv/bin/creative" mcp --config "$PWD/config" --out "$PWD/output"
+```
+
+Then ask in plain words: *"Which Spring Launch markets are blocked, and why?"* or *"Change Japan's call to
+action to 今すぐチェック and re-run Japan with the mock provider."*
+
+**Tests:** `uv pip install -r requirements-dev.txt && python -m pytest -q` (38 tests, all three engines, offline).
+
+<details><summary>More commands: subsets, plan-only, the LangGraph and IRIS engines</summary>
+
+```bash
+creative run summer-promo --provider mock                    # a market-specific legal block (Mexico)
 creative run spring-launch --markets jp,mx                    # subset of markets
 creative run spring-launch --plan-only                        # resolve + legal check only
+creative run spring-launch --provider openai                  # gpt-image-1 direct
+creative run spring-launch --env-file ~/.my/env               # keys from another file
 python -m engines.langgraph run --campaign spring-launch --provider mock         # asks you to approve each market
 python -m engines.langgraph run --campaign spring-launch --auto-approve
 python -m engines.langgraph graph                                                # pipeline as a Mermaid diagram
@@ -79,6 +117,9 @@ python -m engines.iris      run --campaign spring-launch --provider mock        
 python -m engines.iris      run --campaign spring-launch --publish               # writes to an IRIS workspace
 python -m engines.iris      sync-approvals --campaign spring-launch              # pull approver ticks back
 ```
+
+`creative` is the same as `python -m engines.vanilla`, which works without installing.
+</details>
 
 ---
 
@@ -157,6 +198,10 @@ output/vanilla/spring-launch/
 
 ## How it works
 
+<p align="center"><img src="docs/diagrams/pipeline.svg" width="900" alt="Config files owned by six teams merge per market, then resolve, source, render and report"></p>
+
+<details><summary>The same, as text</summary>
+
 ```
    org.yaml ─ brands/ ─ partners/ ─ markets/ ─ channels/ ─ campaign.yaml
                                  │
@@ -173,6 +218,8 @@ output/vanilla/spring-launch/
                                  │
    4. REPORT   report.json · plan.json · approvals.json · influencers.json
 ```
+
+</details>
 
 ---
 
@@ -253,11 +300,7 @@ Verified against a live workspace (first version, product shots only): 4 approva
 The pipeline is headless. Every operation is declared once in [`engines/vanilla/ops.py`](engines/vanilla/ops.py)
 (typed arguments and a docstring), and each interface is generated from that list:
 
-```
-  UI   the Studio ──────► API  POST /api/<op> ──┐
-  CLI  creative <command> ──────────────────────┼──► ops.py ──► access.py ──► config · engine · audit log
-  MCP  one tool per op, for Claude and agents ───┘
-```
+<p align="center"><img src="docs/diagrams/interfaces.svg" width="900" alt="UI, API, CLI and MCP all call ops.py, which checks access.py before touching config, the engine or the audit log"></p>
 
 | Operation | Reads or writes | What it does |
 |---|---|---|
