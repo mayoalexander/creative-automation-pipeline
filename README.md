@@ -105,7 +105,7 @@ claude mcp add creative-kit -e PIPELINE_USER=yuki@example.com -- \
 Then ask in plain words: *"Which Spring Launch markets are blocked, and why?"* or *"Change Japan's call to
 action to 今すぐチェック and re-run Japan with the mock provider."*
 
-**Tests:** `uv pip install -r requirements-dev.txt && python -m pytest -q` (38 tests, all three engines, offline).
+**Tests:** `uv pip install -r requirements-dev.txt && python -m pytest -q` (44 tests, all three engines, offline).
 
 <details><summary>More commands: subsets, plan-only, the LangGraph and IRIS engines</summary>
 
